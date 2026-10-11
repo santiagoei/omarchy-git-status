@@ -28,16 +28,16 @@ A repository is considered "pending" if any of the following is true:
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/igarag/omarchy-git-status.git --enable
+omarchy plugin add https://github.com/santiagoei/omarchy-git-status.git --enable
 ```
 
 Or, if you keep it in your dotfiles, symlink the checkout into the plugins
 directory and rescan:
 
 ```bash
-ln -sfn ~/code/omarchy-git-status ~/.config/omarchy/plugins/nachoaz.git-status
+ln -sfn ~/code/omarchy-git-status ~/.config/omarchy/plugins/ei.git-status
 omarchy-shell shell rescanPlugins
-omarchy plugin enable nachoaz.git-status right
+omarchy plugin enable ei.git-status right
 ```
 
 Dependencies: `git`, `jq`, `find`, coreutils (`sort`, `head`, `timeout`),
@@ -51,18 +51,22 @@ Watched folders are managed from the panel itself: type a path into the
 field at the bottom to add one, click the `×` on a folder to stop watching
 it. Each folder shows how many repositories it holds and how many of them
 are pending, so a typo shows up as "does not exist" on its own row.
+A pattern with `*` or `?` — `~/Projects/*`, say — is a bulk add: every
+folder it matches is stored exactly as if you had typed it itself, each
+with its own row and its own `×`. Patterns expand once, at add time; a
+folder created later needs one more pass.
 
 Everything is stored in the widget's entry in `~/.config/omarchy/shell.json`
 and is also editable from the bar's widget settings UI:
 
 | Key                  | Default  | What it does                                                      |
 | -------------------- | -------- | ----------------------------------------------------------------- |
-| `watchDirs`          | `~/code` | Comma-separated folders to scan. `~` expands to your home folder. |
+| `watchDirs`          | `~/code` | Comma-separated folders to scan. `~` expands to your home folder; `*` and `?` expand once, when added. |
 | `maxDepth`           | `4`      | How deep to look for `.git` directories under each folder.        |
 | `refreshIntervalSec` | `60`     | Seconds between scans.                                            |
 
 ```json
-{ "id": "nachoaz.git-status", "watchDirs": "~/code, ~/work", "maxDepth": 3 }
+{ "id": "ei.git-status", "watchDirs": "~/code, ~/work", "maxDepth": 3 }
 ```
 
 ## Interactions
@@ -81,11 +85,12 @@ and is also editable from the bar's widget settings UI:
 IPC, for scripts and keybinds:
 
 ```bash
-omarchy-shell nachoaz.git-status toggle
-omarchy-shell nachoaz.git-status refresh
-omarchy-shell nachoaz.git-status status         # -> "4 repos pending"
-omarchy-shell nachoaz.git-status watch '~/work'
-omarchy-shell nachoaz.git-status unwatch '~/work'
+omarchy-shell ei.git-status toggle
+omarchy-shell ei.git-status refresh
+omarchy-shell ei.git-status status         # -> "4 repos pending"
+omarchy-shell ei.git-status watch '~/work'
+omarchy-shell ei.git-status watch '~/Projects/*'   # bulk add: one entry per match
+omarchy-shell ei.git-status unwatch '~/work'
 ```
 
 ## How it works
@@ -134,7 +139,7 @@ Crossing one aborts the run and reports it — a half-finished scan that said
 
 | Ceiling | Value |
 |---|---|
-| Watched folders per run   | 8               |
+| Watched folders per run   | 24              |
 | Repositories per folder   | 200             |
 | Repositories in total     | 500             |
 | `maxDepth`                | clamped to 1–8  |
@@ -159,6 +164,12 @@ files, a missing folder — and asserts the verdict and the per-folder counts,
 plus that a hijacked `PATH` is ignored, that each ceiling is rejected, and
 that a straggler which ignores `TERM` is still killed after an abort.
 
+`./core/panel-logic.test.mjs` runs the QML's path round-trip under node:
+it lifts the folder add/remove functions out of `Panel.qml` and asserts that
+a displayed `~/Projects` removes a stored `/home/ei/Projects`, that a glob
+hands its pattern to the resolver instead of the list, and that a batch
+crossing the folder cap is refused whole.
+
 ## Notes
 
 - **Scan cost.** Each tick runs `git status` and `git rev-list` once per
@@ -168,6 +179,15 @@ that a straggler which ignores `TERM` is still killed after an abort.
   files, so a brand-new file in any watched repo turns the icon urgent.
 - **Current branch only.** A side branch with unpushed commits does not
   trigger the indicator if the checked-out branch is clean.
+
+## Credits
+
+Maintained fork of
+[igarag/omarchy-git-status](https://github.com/igarag/omarchy-git-status),
+originally published under the plugin id `nachoaz.git-status`. The
+canonical upstream for the design and the original scan script stays with
+igarag; this fork carries the path-round-trip fix, glob bulk-add, the
+folder cap raised to 24, and the panel logic tests.
 
 ## License
 

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "nachoaz.git-status",
+  "id": "ei.git-status",
   "name": "Git Status",
-  "version": "1.0.1",
-  "author": "nachoaz",
+  "version": "1.1.0",
+  "author": "santiagoei",
   "license": "MIT",
   "description": "Warns when any git repository under your watched folders has work pending to be synchronized: uncommitted changes, untracked files, or unpushed commits.",
   "kinds": ["bar-widget"],
@@ -27,7 +27,7 @@
         "type": "string",
         "label": "Watched folders",
         "defaultValue": "~/code",
-        "description": "Comma-separated folders to scan for git repositories. ~ expands to your home directory. Also editable from the panel itself."
+        "description": "Comma-separated folders to scan for git repositories. ~ expands to your home directory; * and ? are a bulk add, storing every matching folder. Also editable from the panel itself."
       },
       {
         "key": "maxDepth",
