@@ -63,7 +63,7 @@ for bin in "$FIND" "$SORT" "$GIT" "$JQ" "$HEAD"; do
 done
 
 # --- ceilings ----------------------------------------------------------------
-MAX_WATCH_DIRS=8        # watch roots accepted per run
+MAX_WATCH_DIRS=24       # watch roots accepted per run
 MAX_REPOS_PER_DIR=200   # repositories found below one root
 MAX_REPOS_TOTAL=500     # repositories across all roots
 MAX_GIT_BYTES=4096      # bytes read from any single git invocation

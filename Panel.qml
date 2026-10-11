@@ -32,7 +32,7 @@ Panel {
   // Ceilings that mirror the ones in core/git-status.sh. The script rejects an
   // oversized job; this side refuses to hand it one, and refuses to parse an
   // oversized answer instead of buffering whatever arrives.
-  readonly property int maxWatchDirs: 8
+  readonly property int maxWatchDirs: 24
   readonly property int maxOutputBytes: 1048576
   readonly property int scanTimeoutSec: 25
 
@@ -94,14 +94,57 @@ Panel {
     return value
   }
 
+  // A pattern with * or ? is a bulk add: every matching folder lands in the
+  // stored list as if it had been typed on its own row, so each keeps its own
+  // x button and its own missing/empty state. Resolution is one bash tick --
+  // compgen -G expands the pattern without word splitting, and only real
+  // directories survive. Zero matches persist nothing, matching the plan that
+  // a typo shows up nowhere rather than as a dead row.
   function addDir(raw) {
-    var dir = displayDir(raw)
+    var dir = String(raw || "").trim()
     if (dir === "") return
-    var dirs = dirArgs()
-    for (var i = 0; i < dirs.length; i++) {
-      if (canonDir(dirs[i]) === canonDir(dir)) return
+    if (dir.indexOf("*") !== -1 || dir.indexOf("?") !== -1) {
+      glob.command = ["/usr/bin/bash", "-c",
+                      "shopt -s nullglob; mapfile -t m < <(compgen -G \"$1\" | /usr/bin/head -n 64); for d in \"${m[@]}\"; do [ -d \"$d\" ] && printf '%s\\n' \"$d\"; done",
+                      "qsglob", canonDir(dir)]
+      glob.running = true
+      return
     }
-    dirs.push(dir)
+    addDirs([dir])
+  }
+
+  function globDirs(text) {
+    var lines = String(text || "").split("\n")
+    var out = []
+    for (var i = 0; i < lines.length; i++) {
+      var dir = lines[i]
+      if (dir.trim() !== "") out.push(dir)
+    }
+    return out
+  }
+
+  // Bulk entry point behind both add paths: dedupe by canonical shape, store
+  // in the displayed ~ form, refuse the whole batch if it would cross the
+  // folder cap the scanner enforces.
+  function addDirs(list) {
+    var dirs = dirArgs()
+    var added = 0
+    for (var i = 0; i < list.length; i++) {
+      var dir = displayDir(list[i])
+      if (dir === "") continue
+      var dup = false
+      for (var j = 0; j < dirs.length; j++) {
+        if (canonDir(dirs[j]) === canonDir(dir)) { dup = true; break }
+      }
+      if (dup) continue
+      if (dirs.length + 1 > maxWatchDirs) {
+        lastError = "too many watched folders (limit " + maxWatchDirs + ")"
+        return
+      }
+      dirs.push(dir)
+      added = added + 1
+    }
+    if (added === 0) return
     persistDirs(dirs)
   }
 
@@ -245,6 +288,18 @@ Panel {
       root.scanning = false
       watchdog.stop()
       if (exitCode !== 0 && root.lastError === "") root.lastError = "scan exited with code " + exitCode
+    }
+  }
+
+  // One-shot glob resolver behind addDir(): same pinned environment as the
+  // scan, so a pattern cannot smuggle a different bash or head into play.
+  Process {
+    id: glob
+    clearEnvironment: true
+    environment: ({ PATH: "/usr/bin:/bin", HOME: String(Quickshell.env("HOME") || "") })
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.addDirs(root.globDirs(text))
     }
   }
 

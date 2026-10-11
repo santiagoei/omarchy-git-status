@@ -115,10 +115,11 @@ check "discovery is capped before it is sorted" present \
 error_for() { "$SCRIPT" "$@" | jq -r '.state + ": " + (.error // "")'; }
 
 mkdir -p "$WORK/many"
+too_many=()
+for i in $(seq 25); do too_many+=("$WORK/many"); done
 check "too many watched folders is rejected" \
-  "error: too many watched folders (limit 8)" \
-  "$(error_for 3 "$WORK/many" "$WORK/many" "$WORK/many" "$WORK/many" \
-                 "$WORK/many" "$WORK/many" "$WORK/many" "$WORK/many" "$WORK/many")"
+  "error: too many watched folders (limit 24)" \
+  "$(error_for 3 "${too_many[@]}")"
 
 # find(1) only matches on the directory name, so bare .git dirs are enough to
 # trip the cardinality cap -- it is checked before any repo is opened.
