@@ -35,7 +35,7 @@ Or, if you keep it in your dotfiles, symlink the checkout into the plugins
 directory and rescan:
 
 ```bash
-ln -sfn ~/code/omarchy-git-status ~/.config/omarchy/plugins/ei.git-status
+ln -sfn ~/Projects/omarchy/omarchy-git-status ~/.config/omarchy/plugins/ei.git-status
 omarchy-shell shell rescanPlugins
 omarchy plugin enable ei.git-status right
 ```
