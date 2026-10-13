@@ -258,7 +258,7 @@ Panel {
     cursorActive = false
     rowIndex = 0
     if (panelFlick) panelFlick.contentY = 0
-    agentFile.load()
+    if (!agentFile.running) agentFile.running = true
     refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
@@ -269,14 +269,17 @@ Panel {
   // Deliberately read fresh on every open: `omarchy default agent` can change
   // between opens without the panel noticing, and a stale name on the menu is
   // a menu that lies about what it will launch. A missing file is the unset
-  // case, not an error to surface.
-  FileReader {
+  // case, not an error to surface: cat simply answers with nothing.
+  // Process rather than the newer FileReader/FileView: this reads on a bar
+  // panel of every Quickshell the host might run.
+  Process {
     id: agentFile
-    file: root.homeDir === "" ? "" : root.homeDir + "/.config/omarchy/defaults/agent"
-    autoReloadEnabled: false
-    onLoaded: root.defaultAgent = String(text).trim()
-    onErrorOccurred: root.defaultAgent = ""
-    onNotFound: root.defaultAgent = ""
+    command: ["/usr/bin/timeout", "5s", "/usr/bin/cat",
+              root.homeDir + "/.config/omarchy/defaults/agent"]
+    clearEnvironment: true
+    stdout: StdioCollector {
+      onStreamFinished: root.defaultAgent = text.trim()
+    }
   }
 
   Process {
