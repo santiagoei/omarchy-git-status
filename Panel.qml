@@ -62,6 +62,11 @@ Panel {
   property bool cursorActive: false
   property int rowIndex: 0
 
+  // True while a folder's ⋯ popup is open: the key catcher stands down so its
+  // arrows and Escape reach the menu instead of the repo list, exactly the way
+  // the tailscale panel parks its copy popup (KeyboardPanel blocked flag).
+  property bool folderMenuOpen: false
+
   function localPathFromUrl(url) {
     var value = String(url || "")
     if (value.indexOf("file://") === 0) value = value.slice(7)
@@ -399,7 +404,7 @@ Panel {
       // Keys.BeforeItem means this catcher sees keys even when the add field
       // has focus, so every letter typed into it would drive the cursor
       // instead. Stand down while the field is being edited.
-      blocked: addField.activeFocus
+      blocked: addField.activeFocus || root.folderMenuOpen
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         root.moveCursor(dx, dy)
@@ -629,49 +634,168 @@ Panel {
       foreground: root.foreground
       hoverColor: root.urgent
       fontFamily: root.fontFamily
-      onClicked: folderMenu.popup()
+      onClicked: folderMenu.open()
+    }
 
-      // Openers first, the destructive removal last, behind a separator: the
-      // menu is mostly a way to reach the folder, and stop watching should not
-      // sit one careless click under the old × position.
-      Menu {
-        id: folderMenu
+    // The popup's place in the shared cursor. pickMenu is the one place that
+    // knows what each index launches; the rows only report their index.
+    property int menuIndex: 0
+    readonly property int menuCount: 5
 
-        MenuItem {
-          text: "Open in terminal"
-          onTriggered: root.openFolder(folderRow.absPath,
-            ["setsid", "uwsm-app", "--", "xdg-terminal-exec", "--dir=" + folderRow.absPath])
+    function pickMenu(i) {
+      if (i === 0)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--",
+                                  "xdg-terminal-exec", "--dir=" + absPath])
+      else if (i === 1)
+        root.openFolder(absPath, ["omarchy-launch-editor", absPath])
+      else if (i === 2)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-terminal-exec",
+                                  "--dir=" + absPath, "-e", "omarchy-agent", "--inline"])
+      else if (i === 3)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-open", absPath])
+      else if (i === 4) {
+        root.removeDir(folderPath)
+        folderMenu.close()
+      }
+    }
+
+    // The folder menu, drawn the way the shell draws its own in-panel popups
+    // (see the tailscale copy list): a Popup whose background is a
+    // BorderSurface and whose rows are CursorSurfaces, so colours, radius,
+    // hover fill and fonts all come from the active theme instead of the
+    // QtQuick.Controls default menu style, which ignores it entirely.
+    //
+    // Openers first, the destructive removal last behind a separator: stop
+    // watching should not sit one careless click under the old × position.
+    Popup {
+      id: folderMenu
+      x: folderMenuButton.x + folderMenuButton.width - width
+      y: folderMenuButton.y + folderMenuButton.height + Style.space(4)
+      width: Style.space(260)
+      height: contentItem.implicitHeight + topPadding + bottomPadding
+      padding: Style.space(4)
+      modal: false
+      focus: true
+      closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+      onOpenedChanged: {
+        root.folderMenuOpen = opened
+        if (opened) {
+          folderRow.menuIndex = 0
+          Qt.callLater(function() { folderMenuContent.forceActiveFocus() })
+        } else if (root.opened) {
+          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+        }
+      }
+
+      background: BorderSurface {
+        color: Color.background
+        borderSpec: Border.flat(root.dim, 1)
+        radius: Style.cornerRadius
+      }
+
+      contentItem: Column {
+        id: folderMenuContent
+        width: parent.width
+        spacing: 0
+        focus: true
+        Keys.priority: Keys.BeforeItem
+        Keys.onPressed: function(event) {
+          if (event.key === Qt.Key_Down || event.text === "j") {
+            folderRow.menuIndex = (folderRow.menuIndex + 1) % folderRow.menuCount
+            event.accepted = true
+          } else if (event.key === Qt.Key_Up || event.text === "k") {
+            folderRow.menuIndex = (folderRow.menuIndex + folderRow.menuCount - 1) % folderRow.menuCount
+            event.accepted = true
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                     || event.key === Qt.Key_Space) {
+            folderRow.pickMenu(folderRow.menuIndex)
+            event.accepted = true
+          }
         }
 
-        MenuItem {
-          text: "Open in code"
-          onTriggered: root.openFolder(folderRow.absPath,
-            ["omarchy-launch-editor", folderRow.absPath])
+        FolderMenuRow {
+          width: parent.width
+          label: "Open in terminal"
+          selected: folderMenu.opened && folderRow.menuIndex === 0
+          onHovered: folderRow.menuIndex = 0
+          onChosen: folderRow.pickMenu(0)
+        }
+        FolderMenuRow {
+          width: parent.width
+          label: "Open in code"
+          selected: folderMenu.opened && folderRow.menuIndex === 1
+          onHovered: folderRow.menuIndex = 1
+          onChosen: folderRow.pickMenu(1)
+        }
+        FolderMenuRow {
+          width: parent.width
+          label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent
+          selected: folderMenu.opened && folderRow.menuIndex === 2
+          onHovered: folderRow.menuIndex = 2
+          onChosen: folderRow.pickMenu(2)
+        }
+        FolderMenuRow {
+          width: parent.width
+          label: "Open in file explorer"
+          selected: folderMenu.opened && folderRow.menuIndex === 3
+          onHovered: folderRow.menuIndex = 3
+          onChosen: folderRow.pickMenu(3)
         }
 
-        MenuItem {
-          text: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent
-          onTriggered: root.openFolder(folderRow.absPath,
-            ["setsid", "uwsm-app", "--", "xdg-terminal-exec", "--dir=" + folderRow.absPath,
-             "-e", "omarchy-agent", "--inline"])
-        }
+        PanelSeparator { foreground: root.foreground }
 
-        MenuItem {
-          text: "Open in file explorer"
-          onTriggered: root.openFolder(folderRow.absPath,
-            ["setsid", "uwsm-app", "--", "xdg-open", folderRow.absPath])
-        }
-
-        MenuSeparator {}
-
-        MenuItem {
-          text: "Stop watching"
-          onTriggered: root.removeDir(folderRow.folderPath)
+        FolderMenuRow {
+          width: parent.width
+          label: "Stop watching"
+          urgent: true
+          selected: folderMenu.opened && folderRow.menuIndex === 4
+          onHovered: folderRow.menuIndex = 4
+          onChosen: folderRow.pickMenu(4)
         }
       }
     }
   }
 
+  // One menu row of the folder popup. The cursor highlight is the same
+  // CursorSurface contract the rest of the panel uses; hover and clicks leave
+  // as signals and FolderRow alone knows what the index means -- the shape of
+  // tailscale's CopyChoice.
+  component FolderMenuRow: CursorSurface {
+    id: menuRow
+    property string label: ""
+    property bool urgent: false
+    property bool selected: false
+
+    signal hovered()
+    signal chosen()
+
+    hasCursor: menuRow.selected
+    foreground: root.foreground
+    implicitHeight: Style.space(40)
+
+    MouseArea {
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onEntered: menuRow.hovered()
+      onClicked: menuRow.chosen()
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(12)
+      anchors.right: parent.right
+      anchors.rightMargin: Style.space(12)
+      anchors.verticalCenter: parent.verticalCenter
+      text: menuRow.label
+      color: menuRow.urgent ? root.urgent : root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+  }
   component RepoRow: CursorSurface {
     id: repoRow
     property var repo: null
