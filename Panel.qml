@@ -738,6 +738,7 @@ Panel {
           color: folderRow.folderState === "missing" ? root.urgent : root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
+          font.bold: true
           elide: Text.ElideMiddle
         }
 
