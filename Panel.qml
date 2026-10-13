@@ -640,7 +640,7 @@ Panel {
     // The popup's place in the shared cursor. pickMenu is the one place that
     // knows what each index launches; the rows only report their index.
     property int menuIndex: 0
-    readonly property int menuCount: 5
+    readonly property int menuCount: 6
 
     function pickMenu(i) {
       if (i === 0)
@@ -654,6 +654,13 @@ Panel {
       else if (i === 3)
         root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-open", absPath])
       else if (i === 4) {
+        // Copying is a grab, not a departure: the panel stays open on purpose,
+        // and wl-copy takes the path as its own argv entry, same as everywhere
+        // else here, so a folder named with a space stays a literal path.
+        if (absPath === "") return
+        Util.execArgv(["wl-copy", absPath])
+        folderMenu.close()
+      } else if (i === 5) {
         root.removeDir(folderPath)
         folderMenu.close()
       }
@@ -671,7 +678,7 @@ Panel {
       id: folderMenu
       x: folderMenuButton.x + folderMenuButton.width - width
       y: folderMenuButton.y + folderMenuButton.height + Style.space(4)
-      width: Style.space(260)
+      width: Style.space(300)
       height: contentItem.implicitHeight + topPadding + bottomPadding
       padding: Style.space(4)
       modal: false
@@ -711,12 +718,36 @@ Panel {
                      || event.key === Qt.Key_Space) {
             folderRow.pickMenu(folderRow.menuIndex)
             event.accepted = true
+          } else if (event.text >= "1" && event.text <= "6") {
+            folderRow.pickMenu(Number(event.text) - 1)
+            event.accepted = true
           }
         }
+
+        // The header is the whole path, which the row itself has to elide:
+        // a menu should say what it acts on before it acts on it. Middle
+        // elision keeps both ends of the path, home prefix and folder name.
+        Text {
+          textFormat: Text.PlainText
+          width: parent.width
+          leftPadding: Style.space(12)
+          rightPadding: Style.space(12)
+          topPadding: Style.space(6)
+          bottomPadding: Style.space(6)
+          text: folderRow.folderPath
+          color: folderRow.folderState === "missing" ? root.urgent : root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideMiddle
+        }
+
+        PanelSeparator { foreground: root.foreground }
 
         FolderMenuRow {
           width: parent.width
           label: "Open in terminal"
+          glyph: "\uf120"
+          hint: "1"
           selected: folderMenu.opened && folderRow.menuIndex === 0
           onHovered: folderRow.menuIndex = 0
           onChosen: folderRow.pickMenu(0)
@@ -724,6 +755,8 @@ Panel {
         FolderMenuRow {
           width: parent.width
           label: "Open in code"
+          glyph: "\uf121"
+          hint: "2"
           selected: folderMenu.opened && folderRow.menuIndex === 1
           onHovered: folderRow.menuIndex = 1
           onChosen: folderRow.pickMenu(1)
@@ -731,6 +764,8 @@ Panel {
         FolderMenuRow {
           width: parent.width
           label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent
+          glyph: "\uf5fd"
+          hint: "3"
           selected: folderMenu.opened && folderRow.menuIndex === 2
           onHovered: folderRow.menuIndex = 2
           onChosen: folderRow.pickMenu(2)
@@ -738,9 +773,20 @@ Panel {
         FolderMenuRow {
           width: parent.width
           label: "Open in file explorer"
+          glyph: "\uf07b"
+          hint: "4"
           selected: folderMenu.opened && folderRow.menuIndex === 3
           onHovered: folderRow.menuIndex = 3
           onChosen: folderRow.pickMenu(3)
+        }
+        FolderMenuRow {
+          width: parent.width
+          label: "Copy path"
+          glyph: "\uf0c5"
+          hint: "5"
+          selected: folderMenu.opened && folderRow.menuIndex === 4
+          onHovered: folderRow.menuIndex = 4
+          onChosen: folderRow.pickMenu(4)
         }
 
         PanelSeparator { foreground: root.foreground }
@@ -748,10 +794,12 @@ Panel {
         FolderMenuRow {
           width: parent.width
           label: "Stop watching"
+          glyph: "\uf00d"
+          hint: "6"
           urgent: true
-          selected: folderMenu.opened && folderRow.menuIndex === 4
-          onHovered: folderRow.menuIndex = 4
-          onChosen: folderRow.pickMenu(4)
+          selected: folderMenu.opened && folderRow.menuIndex === 5
+          onHovered: folderRow.menuIndex = 5
+          onChosen: folderRow.pickMenu(5)
         }
       }
     }
@@ -760,10 +808,13 @@ Panel {
   // One menu row of the folder popup. The cursor highlight is the same
   // CursorSurface contract the rest of the panel uses; hover and clicks leave
   // as signals and FolderRow alone knows what the index means -- the shape of
-  // tailscale's CopyChoice.
+  // tailscale's CopyChoice. The glyph says what the action does, the hint
+  // says which digit does it while the menu is open.
   component FolderMenuRow: CursorSurface {
     id: menuRow
     property string label: ""
+    property string glyph: ""
+    property string hint: ""
     property bool urgent: false
     property bool selected: false
 
@@ -782,18 +833,41 @@ Panel {
       onClicked: menuRow.chosen()
     }
 
-    Text {
-      textFormat: Text.PlainText
+    RowLayout {
       anchors.left: parent.left
-      anchors.leftMargin: Style.space(12)
       anchors.right: parent.right
+      anchors.leftMargin: Style.space(12)
       anchors.rightMargin: Style.space(12)
       anchors.verticalCenter: parent.verticalCenter
-      text: menuRow.label
-      color: menuRow.urgent ? root.urgent : root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      elide: Text.ElideRight
+      spacing: Style.space(10)
+
+      Text {
+        textFormat: Text.PlainText
+        text: menuRow.glyph
+        color: menuRow.urgent ? root.urgent : root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.icon
+        Layout.alignment: Qt.AlignVCenter
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        Layout.fillWidth: true
+        text: menuRow.label
+        color: menuRow.urgent ? root.urgent : root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        text: menuRow.hint
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        Layout.alignment: Qt.AlignVCenter
+      }
     }
   }
   component RepoRow: CursorSurface {

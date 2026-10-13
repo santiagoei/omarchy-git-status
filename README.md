@@ -82,7 +82,7 @@ and is also editable from the bar's widget settings UI:
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| `⋯`          | Folder menu: open in terminal, editor, agent or file explorer, stop watching |
+| `⋯`          | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
 
 IPC, for scripts and keybinds:
 
