@@ -48,12 +48,14 @@ path, so nothing earlier in your own `PATH` gets to stand in for them.
 ## Configuration
 
 Watched folders are managed from the panel itself: type a path into the
-field at the bottom to add one, click the `×` on a folder to stop watching
-it. Each folder shows how many repositories it holds and how many of them
-are pending, so a typo shows up as "does not exist" on its own row.
+field at the bottom to add one, click the `⋯` on a folder for its menu:
+open it in a terminal, your default editor, your default coding agent or
+your file explorer, or stop watching it. Each folder shows how many
+repositories it holds and how many of them are pending, so a typo shows
+up as "does not exist" on its own row.
 A pattern with `*` or `?` — `~/Projects/*`, say — is a bulk add: every
 folder it matches is stored exactly as if you had typed it itself, each
-with its own row and its own `×`. Patterns expand once, at add time; a
+with its own row and its own `⋯`. Patterns expand once, at add time; a
 folder created later needs one more pass.
 
 Everything is stored in the widget's entry in `~/.config/omarchy/shell.json`
@@ -80,7 +82,7 @@ and is also editable from the bar's widget settings UI:
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| `×`          | Stop watching that folder          |
+| `⋯`          | Folder menu: open in terminal, editor, agent or file explorer, stop watching |
 
 IPC, for scripts and keybinds:
 

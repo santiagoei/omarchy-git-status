@@ -1,7 +1,7 @@
 // Unit tests for the path round-trip inside Panel.qml.
 //
-// The functions that decide which watched folder an x button removes are pure
-// JavaScript over strings, so they are extracted from the QML at test time and
+// The functions that decide which watched folder the menu's stop-watching
+// removes are pure JavaScript over strings, so they are extracted from the QML at test time and
 // run under node. This is the safety net the first release lacked: the panel
 // displays `~/Projects` while shell.json may store `/home/ei/Projects`, and
 // comparing the two without canonicalising them silently broke every removal.

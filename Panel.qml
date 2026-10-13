@@ -42,6 +42,12 @@ Panel {
   property bool scanning: false
   property string lastError: ""
 
+  // Name of the agent configured through `omarchy default agent`, read from its
+  // defaults file whenever the panel opens. Empty until read (and when nothing
+  // is configured), which leaves the folder menu's agent row generically
+  // labelled instead of naming an agent the user never picked.
+  property string defaultAgent: ""
+
   readonly property bool unsynced: pending.length > 0
   readonly property color barIconColor: unsynced ? urgent : barForeground
   readonly property string summary: {
@@ -96,7 +102,7 @@ Panel {
 
   // A pattern with * or ? is a bulk add: every matching folder lands in the
   // stored list as if it had been typed on its own row, so each keeps its own
-  // x button and its own missing/empty state. Resolution is one bash tick --
+  // folder menu and its own missing/empty state. Resolution is one bash tick --
   // compgen -G expands the pattern without word splitting, and only real
   // directories survive. Zero matches persist nothing, matching the plan that
   // a typo shows up nowhere rather than as a dead row.
@@ -209,6 +215,21 @@ Panel {
     close()
   }
 
+  // The folder menu's openers, same execArgv-over-bar.run reasoning as
+  // openRepo: the path is one argv entry, never text a shell re-reads. Each
+  // uses the default Omarchy configures rather than a hardcoded app:
+  // xdg-terminal-exec for the terminal, omarchy-launch-editor for the editor,
+  // omarchy-agent for the default agent, xdg-open for the file manager. The
+  // agent gets --dir and --inline rather than a path argument, which it would
+  // refuse: --dir puts its terminal in the folder, and --inline runs the agent
+  // in that terminal instead of spawning a second one and leaving the first
+  // to flash empty.
+  function openFolder(path, argv) {
+    if (path === "") return
+    Util.execArgv(argv)
+    close()
+  }
+
   // Abort the scan so that nothing it spawned outlives it. Stopping the Process
   // sends TERM to timeout(1) -- by pid, to a child Quickshell has not reaped
   // yet, so it cannot be anyone else -- and timeout forwards it to the group.
@@ -237,12 +258,26 @@ Panel {
     cursorActive = false
     rowIndex = 0
     if (panelFlick) panelFlick.contentY = 0
+    agentFile.load()
     refresh()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   onWatchDirsChanged: refresh()
   Component.onCompleted: refresh()
+
+  // Deliberately read fresh on every open: `omarchy default agent` can change
+  // between opens without the panel noticing, and a stale name on the menu is
+  // a menu that lies about what it will launch. A missing file is the unset
+  // case, not an error to surface.
+  FileReader {
+    id: agentFile
+    file: root.homeDir === "" ? "" : root.homeDir + "/.config/omarchy/defaults/agent"
+    autoReloadEnabled: false
+    onLoaded: root.defaultAgent = String(text).trim()
+    onErrorOccurred: root.defaultAgent = ""
+    onNotFound: root.defaultAgent = ""
+  }
 
   Process {
     id: scan
@@ -538,6 +573,9 @@ Panel {
     property var folder: null
     readonly property string folderPath: folder ? String(folder.path) : ""
     readonly property string folderState: folder ? String(folder.state) : "ok"
+    // The rows speak the displayed ~ form; launchers want the real path, so
+    // every action runs against the canonicalised one.
+    readonly property string absPath: root.canonDir(folderPath)
     readonly property string meta: {
       if (folderState === "missing") return "does not exist"
       if (folderState === "empty") return "no git repos"
@@ -547,13 +585,13 @@ Panel {
       return pending > 0 ? count + " · " + pending + " pending" : count + " · all synced"
     }
 
-    implicitHeight: Math.max(folderLabels.implicitHeight, removeButton.implicitHeight)
+    implicitHeight: Math.max(folderLabels.implicitHeight, folderMenuButton.implicitHeight)
       + Style.space(4)
 
     Column {
       id: folderLabels
       anchors.left: parent.left
-      anchors.right: removeButton.left
+      anchors.right: folderMenuButton.left
       anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.space(1)
@@ -580,15 +618,54 @@ Panel {
     }
 
     PanelActionButton {
-      id: removeButton
+      id: folderMenuButton
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      iconText: "\uf00d"
-      tooltipText: "Stop watching this folder"
+      iconText: "\uf141"
+      tooltipText: "Folder actions"
       foreground: root.foreground
       hoverColor: root.urgent
       fontFamily: root.fontFamily
-      onClicked: root.removeDir(folderRow.folderPath)
+      onClicked: folderMenu.popup()
+
+      // Openers first, the destructive removal last, behind a separator: the
+      // menu is mostly a way to reach the folder, and stop watching should not
+      // sit one careless click under the old × position.
+      Menu {
+        id: folderMenu
+
+        MenuItem {
+          text: "Open in terminal"
+          onTriggered: root.openFolder(folderRow.absPath,
+            ["setsid", "uwsm-app", "--", "xdg-terminal-exec", "--dir=" + folderRow.absPath])
+        }
+
+        MenuItem {
+          text: "Open in code"
+          onTriggered: root.openFolder(folderRow.absPath,
+            ["omarchy-launch-editor", folderRow.absPath])
+        }
+
+        MenuItem {
+          text: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent
+          onTriggered: root.openFolder(folderRow.absPath,
+            ["setsid", "uwsm-app", "--", "xdg-terminal-exec", "--dir=" + folderRow.absPath,
+             "-e", "omarchy-agent", "--inline"])
+        }
+
+        MenuItem {
+          text: "Open in file explorer"
+          onTriggered: root.openFolder(folderRow.absPath,
+            ["setsid", "uwsm-app", "--", "xdg-open", folderRow.absPath])
+        }
+
+        MenuSeparator {}
+
+        MenuItem {
+          text: "Stop watching"
+          onTriggered: root.removeDir(folderRow.folderPath)
+        }
+      }
     }
   }
 
