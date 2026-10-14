@@ -9,7 +9,8 @@ The bar shows a single git glyph, in your theme's foreground when
 everything is clean and in the theme's urgent color when something is
 pending. The popup lists the repositories that need attention — clicking
 one opens lazygit there — and the watched folders themselves, which you add
-and remove from inside the panel. There is no configuration file.
+and remove from inside the panel and which open into their repositories
+with a click. There is no configuration file.
 
 ![preview](preview.png)
 
@@ -50,10 +51,13 @@ path, so nothing earlier in your own `PATH` gets to stand in for them.
 Watched folders are managed from the panel itself: type a path into the
 field at the bottom to add one, click the `⋯` on a folder for its menu:
 open it in a terminal, your default editor, your default coding agent or
-your file explorer, or stop watching it. Every pending repository row has
-its own `⋯` too, with the same openers plus lazygit at the head. Each
-folder shows how many repositories it holds and how many of them are
-pending, so a typo shows up as "does not exist" on its own row.
+your file explorer, or copy its path; the `×` stops watching it. Clicking
+the folder row itself expands it into every repository it holds — each
+repo opens lazygit on a click and carries its own `⋯` with those same
+openers plus lazygit at the head. An expanded folder stays open across
+refreshes until you click it shut. Each folder shows how many
+repositories it holds and how many of them are pending, so a typo shows
+up as "does not exist" on its own row.
 A pattern with `*` or `?` — `~/Projects/*`, say — is a bulk add: every
 folder it matches is stored exactly as if you had typed it itself, each
 with its own row and its own `⋯`. Patterns expand once, at add time; a
@@ -83,8 +87,10 @@ and is also editable from the bar's widget settings UI:
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
-| `⋯` on a repo   | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
+| Click a folder | Expand / collapse its repositories |
+| `×` on a folder | Stop watching it                 |
+| `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path (`1`–`5` or `↑`/`↓`) |
+| `⋯` on an expanded repo | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
 
 IPC, for scripts and keybinds:
 
@@ -125,7 +131,9 @@ It prints one JSON object on stdout:
       "dir": "~/code", "issues": "uncommitted changes" }
   ],
   "watched": [
-    { "path": "~/code", "state": "ok", "repos": 13, "pending": 1 }
+    { "path": "~/code", "state": "ok", "repos": 13, "pending": 1,
+      "repoList": [ { "name": "dotfiles",
+                      "path": "/home/me/code/dotfiles", "pending": true } ] }
   ]
 }
 ```
