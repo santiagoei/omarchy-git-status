@@ -44,7 +44,7 @@ Panel {
 
   // Name of the agent configured through `omarchy default agent`, read from its
   // defaults file whenever the panel opens. Empty until read (and when nothing
-  // is configured), which leaves the folder menu's agent row generically
+  // is configured), which leaves the row menus' agent row generically
   // labelled instead of naming an agent the user never picked.
   property string defaultAgent: ""
 
@@ -62,10 +62,14 @@ Panel {
   property bool cursorActive: false
   property int rowIndex: 0
 
-  // True while a folder's ⋯ popup is open: the key catcher stands down so its
+  // True while one of the row ⋯ popups is open: the key catcher stands down so its
   // arrows and Escape reach the menu instead of the repo list, exactly the way
   // the tailscale panel parks its copy popup (KeyboardPanel blocked flag).
+  // Two flags rather than one shared: opening the second menu closes the first
+  // through CloseOnPressOutside, and that closing menu would stamp out the flag
+  // the freshly opened one just set.
   property bool folderMenuOpen: false
+  property bool repoMenuOpen: false
 
   function localPathFromUrl(url) {
     var value = String(url || "")
@@ -220,7 +224,7 @@ Panel {
     close()
   }
 
-  // The folder menu's openers, same execArgv-over-bar.run reasoning as
+  // The row menus' openers, same execArgv-over-bar.run reasoning as
   // openRepo: the path is one argv entry, never text a shell re-reads. Each
   // uses the default Omarchy configures rather than a hardcoded app:
   // xdg-terminal-exec for the terminal, omarchy-launch-editor for the editor,
@@ -262,6 +266,12 @@ Panel {
   onOpenedChanged: if (opened) {
     cursorActive = false
     rowIndex = 0
+    // A launcher row closes the panel with its menu still open. The popup goes
+    // down with the panel, but a flag that ever stayed true would deafen the
+    // key catcher on the next open, so both menus start closed here no matter
+    // what.
+    folderMenuOpen = false
+    repoMenuOpen = false
     if (panelFlick) panelFlick.contentY = 0
     if (!agentFile.running) agentFile.running = true
     refresh()
@@ -404,7 +414,7 @@ Panel {
       // Keys.BeforeItem means this catcher sees keys even when the add field
       // has focus, so every letter typed into it would drive the cursor
       // instead. Stand down while the field is being edited.
-      blocked: addField.activeFocus || root.folderMenuOpen
+      blocked: addField.activeFocus || root.folderMenuOpen || root.repoMenuOpen
       onMoveRequested: function(dx, dy) {
         if (!root.cursorActive) { root.cursorActive = true; return }
         root.moveCursor(dx, dy)
@@ -637,11 +647,8 @@ Panel {
       onClicked: folderMenu.open()
     }
 
-    // The popup's place in the shared cursor. pickMenu is the one place that
-    // knows what each index launches; the rows only report their index.
-    property int menuIndex: 0
-    readonly property int menuCount: 6
-
+    // What each menu index launches. The menu itself only counts rows; this is
+    // the one place that knows what they mean.
     function pickMenu(i) {
       if (i === 0)
         root.openFolder(absPath, ["setsid", "uwsm-app", "--",
@@ -666,151 +673,38 @@ Panel {
       }
     }
 
-    // The folder menu, drawn the way the shell draws its own in-panel popups
-    // (see the tailscale copy list): a Popup whose background is a
-    // BorderSurface and whose rows are CursorSurfaces, so colours, radius,
-    // hover fill and fonts all come from the active theme instead of the
-    // QtQuick.Controls default menu style, which ignores it entirely.
-    //
-    // Openers first, the destructive removal last behind a separator: stop
-    // watching should not sit one careless click under the old × position.
-    Popup {
+    RowMenu {
       id: folderMenu
       x: folderMenuButton.x + folderMenuButton.width - width
       y: folderMenuButton.y + folderMenuButton.height + Style.space(4)
-      width: Style.space(300)
-      height: contentItem.implicitHeight + topPadding + bottomPadding
-      padding: Style.space(4)
-      modal: false
-      focus: true
-      closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+      title: folderRow.folderPath
+      urgentTitle: folderRow.folderState === "missing"
+      items: [
+        { label: "Open in terminal", glyph: "\uf120" },
+        { label: "Open in code", glyph: "\uf121" },
+        { label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent, glyph: "\uf5fd" },
+        { label: "Open in file explorer", glyph: "\uf07b" },
+        { label: "Copy path", glyph: "\uf0c5" },
+        { label: "Stop watching", glyph: "\uf00d", urgent: true, sep: true },
+      ]
+      onChosen: function(i) { folderRow.pickMenu(i) }
 
+      // Opened-focus is the menu's own business; here only the shared flag and
+      // handing the keys back to the panel's catcher once the menu closes while
+      // the panel is still up.
       onOpenedChanged: {
         root.folderMenuOpen = opened
-        if (opened) {
-          folderRow.menuIndex = 0
-          Qt.callLater(function() { folderMenuContent.forceActiveFocus() })
-        } else if (root.opened) {
+        if (!opened && root.opened)
           Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-        }
-      }
-
-      background: BorderSurface {
-        color: Color.background
-        borderSpec: Border.flat(root.dim, 1)
-        radius: Style.cornerRadius
-      }
-
-      contentItem: Column {
-        id: folderMenuContent
-        width: parent.width
-        spacing: 0
-        focus: true
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Down || event.text === "j") {
-            folderRow.menuIndex = (folderRow.menuIndex + 1) % folderRow.menuCount
-            event.accepted = true
-          } else if (event.key === Qt.Key_Up || event.text === "k") {
-            folderRow.menuIndex = (folderRow.menuIndex + folderRow.menuCount - 1) % folderRow.menuCount
-            event.accepted = true
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
-                     || event.key === Qt.Key_Space) {
-            folderRow.pickMenu(folderRow.menuIndex)
-            event.accepted = true
-          } else if (event.text >= "1" && event.text <= "6") {
-            folderRow.pickMenu(Number(event.text) - 1)
-            event.accepted = true
-          }
-        }
-
-        // The header is the whole path, which the row itself has to elide:
-        // a menu should say what it acts on before it acts on it. Middle
-        // elision keeps both ends of the path, home prefix and folder name.
-        Text {
-          textFormat: Text.PlainText
-          width: parent.width
-          leftPadding: Style.space(12)
-          rightPadding: Style.space(12)
-          topPadding: Style.space(6)
-          bottomPadding: Style.space(6)
-          text: folderRow.folderPath
-          color: folderRow.folderState === "missing" ? root.urgent : root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.bold: true
-          elide: Text.ElideMiddle
-        }
-
-        PanelSeparator { foreground: root.foreground }
-
-        FolderMenuRow {
-          width: parent.width
-          label: "Open in terminal"
-          glyph: "\uf120"
-          hint: "1"
-          selected: folderMenu.opened && folderRow.menuIndex === 0
-          onHovered: folderRow.menuIndex = 0
-          onChosen: folderRow.pickMenu(0)
-        }
-        FolderMenuRow {
-          width: parent.width
-          label: "Open in code"
-          glyph: "\uf121"
-          hint: "2"
-          selected: folderMenu.opened && folderRow.menuIndex === 1
-          onHovered: folderRow.menuIndex = 1
-          onChosen: folderRow.pickMenu(1)
-        }
-        FolderMenuRow {
-          width: parent.width
-          label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent
-          glyph: "\uf5fd"
-          hint: "3"
-          selected: folderMenu.opened && folderRow.menuIndex === 2
-          onHovered: folderRow.menuIndex = 2
-          onChosen: folderRow.pickMenu(2)
-        }
-        FolderMenuRow {
-          width: parent.width
-          label: "Open in file explorer"
-          glyph: "\uf07b"
-          hint: "4"
-          selected: folderMenu.opened && folderRow.menuIndex === 3
-          onHovered: folderRow.menuIndex = 3
-          onChosen: folderRow.pickMenu(3)
-        }
-        FolderMenuRow {
-          width: parent.width
-          label: "Copy path"
-          glyph: "\uf0c5"
-          hint: "5"
-          selected: folderMenu.opened && folderRow.menuIndex === 4
-          onHovered: folderRow.menuIndex = 4
-          onChosen: folderRow.pickMenu(4)
-        }
-
-        PanelSeparator { foreground: root.foreground }
-
-        FolderMenuRow {
-          width: parent.width
-          label: "Stop watching"
-          glyph: "\uf00d"
-          hint: "6"
-          urgent: true
-          selected: folderMenu.opened && folderRow.menuIndex === 5
-          onHovered: folderRow.menuIndex = 5
-          onChosen: folderRow.pickMenu(5)
-        }
       }
     }
   }
 
-  // One menu row of the folder popup. The cursor highlight is the same
+  // One menu row of the shared RowMenu. The cursor highlight is the same
   // CursorSurface contract the rest of the panel uses; hover and clicks leave
-  // as signals and FolderRow alone knows what the index means -- the shape of
-  // tailscale's CopyChoice. The glyph says what the action does, the hint
-  // says which digit does it while the menu is open.
+  // as signals and the owning row alone knows what the index means -- the
+  // shape of tailscale's CopyChoice. The glyph says what the action does, the
+  // hint says which digit does it while the menu is open.
   component FolderMenuRow: CursorSurface {
     id: menuRow
     property string label: ""
@@ -871,14 +765,138 @@ Panel {
       }
     }
   }
+  // The shared ⋯ popup behind both the folder rows and the repository rows.
+  // Drawn the way the shell draws its own in-panel popups (see the tailscale
+  // copy list): a Popup whose background is a BorderSurface and whose rows are
+  // CursorSurfaces, so colours, radius, hover fill and fonts all come from the
+  // active theme instead of the QtQuick.Controls default menu style, which
+  // ignores it entirely.
+  //
+  // The owner supplies a title (the path the menu acts on, which the rows
+  // themselves have to elide: a menu should say what it acts on before it acts
+  // on it; middle elision keeps both ends of the path, home prefix and folder
+  // name) plus items: { label, glyph, urgent, sep }. The digit hint is the
+  // item's position, so the number on screen can never point at another row,
+  // and `sep` draws the divider above a row -- the place to park a destructive
+  // action one careless click away from the openers. `chosen(index)` is the
+  // only way out; what an index launches is the owning row's business.
+  component RowMenu: Popup {
+    id: rowMenu
+
+    property string title: ""
+    property bool urgentTitle: false
+    property var items: []
+    property int menuIndex: 0
+
+    signal chosen(index: int)
+
+    width: Style.space(300)
+    height: contentItem.implicitHeight + topPadding + bottomPadding
+    padding: Style.space(4)
+    modal: false
+    focus: true
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+    // Every open starts the cursor on the first row: the menu may have been
+    // closed over a different entry, or by Escape on the last one.
+    onOpenedChanged: if (opened) {
+      menuIndex = 0
+      Qt.callLater(function() { rowMenuContent.forceActiveFocus() })
+    }
+
+    background: BorderSurface {
+      color: Color.background
+      borderSpec: Border.flat(root.dim, 1)
+      radius: Style.cornerRadius
+    }
+
+    contentItem: Column {
+      id: rowMenuContent
+      width: parent.width
+      spacing: 0
+      focus: true
+      Keys.priority: Keys.BeforeItem
+      Keys.onPressed: function(event) {
+        var count = rowMenu.items.length
+        if (count === 0) return
+        if (event.key === Qt.Key_Down || event.text === "j") {
+          rowMenu.menuIndex = (rowMenu.menuIndex + 1) % count
+          event.accepted = true
+        } else if (event.key === Qt.Key_Up || event.text === "k") {
+          rowMenu.menuIndex = (rowMenu.menuIndex + count - 1) % count
+          event.accepted = true
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                   || event.key === Qt.Key_Space) {
+          rowMenu.chosen(rowMenu.menuIndex)
+          event.accepted = true
+        } else if (event.text >= "1" && event.text <= String(count)) {
+          // The digit shortcuts reach as far as the menu is long; the single
+          // character comparison assumes no menu ever grows past 9 rows.
+          rowMenu.chosen(Number(event.text) - 1)
+          event.accepted = true
+        }
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        leftPadding: Style.space(12)
+        rightPadding: Style.space(12)
+        topPadding: Style.space(6)
+        bottomPadding: Style.space(6)
+        text: rowMenu.title
+        color: rowMenu.urgentTitle ? root.urgent : root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        font.bold: true
+        elide: Text.ElideMiddle
+      }
+
+      PanelSeparator { foreground: root.foreground }
+
+      Repeater {
+        model: rowMenu.items
+
+        // One Column per item so a `sep` row carries its own divider: the
+        // invisible separator collapses to zero height instead of leaving a
+        // gap for the layout to argue about.
+        delegate: Column {
+          width: rowMenuContent.width
+          spacing: 0
+
+          PanelSeparator {
+            foreground: root.foreground
+            visible: modelData.sep === true
+            height: visible ? implicitHeight : 0
+          }
+
+          FolderMenuRow {
+            width: parent.width
+            label: modelData.label
+            glyph: modelData.glyph
+            hint: String(index + 1)
+            urgent: modelData.urgent === true
+            selected: rowMenu.opened && rowMenu.menuIndex === index
+            onHovered: rowMenu.menuIndex = index
+            onChosen: rowMenu.chosen(index)
+          }
+        }
+      }
+    }
+  }
+
   component RepoRow: CursorSurface {
     id: repoRow
     property var repo: null
     property int row: 0
 
+    readonly property string repoPath: repo ? String(repo.path) : ""
+    readonly property string absPath: root.canonDir(repoPath)
+
     hasCursor: root.cursorActive && root.rowIndex === row
     foreground: root.foreground
-    implicitHeight: repoContent.implicitHeight + Style.spacing.rowPaddingX
+    implicitHeight: Math.max(repoContent.implicitHeight, repoMenuButton.implicitHeight)
+      + Style.spacing.rowPaddingX
 
     MouseArea {
       anchors.fill: parent
@@ -893,10 +911,10 @@ Panel {
 
     RowLayout {
       anchors.left: parent.left
-      anchors.right: parent.right
+      anchors.right: repoMenuButton.left
+      anchors.rightMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       anchors.leftMargin: Style.space(10)
-      anchors.rightMargin: Style.space(10)
       spacing: Style.space(8)
 
       Text {
@@ -932,6 +950,71 @@ Panel {
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
         }
+      }
+    }
+
+    // Declared after the row's MouseArea so it stacks above it: a press on the
+    // three dots lands on the button, not on the lazygit launch.
+    PanelActionButton {
+      id: repoMenuButton
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      iconText: "\uf141"
+      tooltipText: "Repo actions"
+      foreground: root.foreground
+      hoverColor: root.urgent
+      fontFamily: root.fontFamily
+      onClicked: repoMenu.open()
+    }
+
+    // The row menu, same shape as the folder's, with lazygit at the head: the
+    // row click is the repo's default action and digit 1 should do exactly
+    // what it does.
+    RowMenu {
+      id: repoMenu
+      x: repoMenuButton.x + repoMenuButton.width - width
+      y: repoMenuButton.y + repoMenuButton.height + Style.space(4)
+      title: root.displayDir(repoRow.repoPath)
+      items: [
+        { label: "Open lazygit", glyph: "\ue65d" },
+        { label: "Open in terminal", glyph: "\uf120" },
+        { label: "Open in code", glyph: "\uf121" },
+        { label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent, glyph: "\uf5fd" },
+        { label: "Open in file explorer", glyph: "\uf07b" },
+        { label: "Copy path", glyph: "\uf0c5" },
+      ]
+      onChosen: function(i) { repoRow.pickMenu(i) }
+
+      // The flag this menu raises and the hand-back of the keys to the panel's
+      // catcher once it closes while the panel is still up; the opened-focus is
+      // the menu's own business.
+      onOpenedChanged: {
+        root.repoMenuOpen = opened
+        if (!opened && root.opened)
+          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
+    }
+
+    function pickMenu(i) {
+      if (i === 0)
+        root.openRepo(repoRow.repo)
+      else if (i === 1)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--",
+                                  "xdg-terminal-exec", "--dir=" + absPath])
+      else if (i === 2)
+        root.openFolder(absPath, ["omarchy-launch-editor", absPath])
+      else if (i === 3)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-terminal-exec",
+                                  "--dir=" + absPath, "-e", "omarchy-agent", "--inline"])
+      else if (i === 4)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-open", absPath])
+      else if (i === 5) {
+        // Copying is a grab, not a departure: the panel stays open on purpose,
+        // and wl-copy takes the path as its own argv entry, same as everywhere
+        // else here, so a folder named with a space stays a literal path.
+        if (absPath === "") return
+        Util.execArgv(["wl-copy", absPath])
+        repoMenu.close()
       }
     }
   }
