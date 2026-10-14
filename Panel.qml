@@ -633,9 +633,9 @@ Panel {
         height: Math.max(folderLabels.implicitHeight, folderMenuButton.implicitHeight)
           + Style.space(4)
 
-        // Declared first so the two buttons stack above it: a press on the
-        // right edge lands on × or ⋯, anywhere else on the header it toggles
-        // the folder's repository list.
+        // Declared first so the ⋯ button stacks above it: a press on the
+        // right edge lands on the menu, anywhere else on the header it
+        // toggles the folder's repository list.
         MouseArea {
           anchors.fill: parent
           hoverEnabled: true
@@ -643,27 +643,17 @@ Panel {
           onClicked: root.toggleExpand(folderRow.absPath)
         }
 
-        Text {
-          id: folderChevron
-          anchors.left: parent.left
-          anchors.leftMargin: Style.space(4)
-          anchors.verticalCenter: parent.verticalCenter
-          textFormat: Text.PlainText
-          text: folderRow.expanded ? "\uf078" : "\uf054"
-          color: folderRow.folderState === "missing" ? root.urgent : root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
-
         Column {
           id: folderLabels
-          anchors.left: folderChevron.right
-          anchors.leftMargin: Style.space(8)
-          anchors.right: folderStopButton.left
+          anchors.left: parent.left
+          anchors.right: folderMenuButton.left
           anchors.rightMargin: Style.space(8)
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(1)
 
+          // An open folder writes its path in bold: with the repo list
+          // hanging under it and no arrow to say which is which, the weight
+          // is what marks the folder as the one currently expanded.
           Text {
             textFormat: Text.PlainText
             width: parent.width
@@ -671,6 +661,7 @@ Panel {
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
+            font.bold: folderRow.expanded
             elide: Text.ElideRight
           }
 
@@ -683,22 +674,6 @@ Panel {
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
           }
-        }
-
-        // The destructive stop sits on the row itself -- it belonged to the
-        // old × the folders carried before any menu existed, and one click
-        // is all it should ever have taken. The menu is for the openers.
-        PanelActionButton {
-          id: folderStopButton
-          anchors.right: folderMenuButton.left
-          anchors.rightMargin: Style.space(2)
-          anchors.verticalCenter: parent.verticalCenter
-          iconText: "\uf00d"
-          tooltipText: "Stop watching"
-          foreground: root.dim
-          hoverColor: root.urgent
-          fontFamily: root.fontFamily
-          onClicked: root.removeDir(folderPath)
         }
 
         PanelActionButton {
@@ -756,6 +731,9 @@ Panel {
         if (absPath === "") return
         Util.execArgv(["wl-copy", absPath])
         folderMenu.close()
+      } else if (i === 5) {
+        root.removeDir(folderPath)
+        folderMenu.close()
       }
     }
 
@@ -771,6 +749,7 @@ Panel {
         { label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent, glyph: "\uf5fd" },
         { label: "Open in file explorer", glyph: "\uf07b" },
         { label: "Copy path", glyph: "\uf0c5" },
+        { label: "Stop watching", glyph: "\uf00d", urgent: true, sep: true },
       ]
       onChosen: function(i) { folderRow.pickMenu(i) }
 
@@ -787,8 +766,8 @@ Panel {
 
   // One repository of an expanded folder. Clicking the row opens lazygit
   // there -- the same contract as the pending rows -- and the ⋯ carries the
-  // repo's menu. Watching is not this row's business: stopping a folder is
-  // the folder's own ×.
+  // repo's menu. Watching is not this row's business: stopping a folder
+  // belongs to the folder's own menu.
   component FolderRepoRow: Item {
     id: folderRepoRow
     property var repoItem: null
