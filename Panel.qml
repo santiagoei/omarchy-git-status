@@ -71,6 +71,21 @@ Panel {
   property bool folderMenuOpen: false
   property bool repoMenuOpen: false
 
+  // Which watched folders are expanded into their repository lists, keyed by
+  // canonical path. The state lives on the panel, not on the rows: the scan
+  // replaces its model every tick and the delegates rebuild, and an opened
+  // folder should stay open until it is clicked shut again.
+  property var expandedDirs: ({})
+
+  function toggleExpand(key) {
+    if (key === "") return
+    var next = ({})
+    for (var k in expandedDirs)
+      if (expandedDirs[k] === true && k !== key) next[k] = true
+    if (expandedDirs[key] !== true) next[key] = true
+    expandedDirs = next
+  }
+
   function localPathFromUrl(url) {
     var value = String(url || "")
     if (value.indexOf("file://") === 0) value = value.slice(7)
@@ -405,8 +420,8 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(360))
-    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(520))
+    contentWidth: panel.fittedContentWidth(Style.space(432))
+    contentHeight: panel.fittedContentHeight(column.implicitHeight, Style.space(676))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -592,8 +607,10 @@ Panel {
     readonly property string folderPath: folder ? String(folder.path) : ""
     readonly property string folderState: folder ? String(folder.state) : "ok"
     // The rows speak the displayed ~ form; launchers want the real path, so
-    // every action runs against the canonicalised one.
+    // every action -- and the expansion key -- runs against the canonicalised one.
     readonly property string absPath: root.canonDir(folderPath)
+    readonly property bool expanded: root.expandedDirs[absPath] === true
+    readonly property var repoList: folder && folder.repoList ? folder.repoList : []
     readonly property string meta: {
       if (folderState === "missing") return "does not exist"
       if (folderState === "empty") return "no git repos"
@@ -603,48 +620,120 @@ Panel {
       return pending > 0 ? count + " · " + pending + " pending" : count + " · all synced"
     }
 
-    implicitHeight: Math.max(folderLabels.implicitHeight, folderMenuButton.implicitHeight)
-      + Style.space(4)
+    implicitHeight: folderColumn.implicitHeight
 
     Column {
-      id: folderLabels
-      anchors.left: parent.left
-      anchors.right: folderMenuButton.left
-      anchors.rightMargin: Style.space(8)
-      anchors.verticalCenter: parent.verticalCenter
-      spacing: Style.space(1)
+      id: folderColumn
+      width: parent.width
+      spacing: 0
 
-      Text {
-        textFormat: Text.PlainText
-        width: parent.width
-        text: folderRow.folderPath
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-        elide: Text.ElideRight
+      Item {
+        id: folderHeader
+        width: folderColumn.width
+        height: Math.max(folderLabels.implicitHeight, folderMenuButton.implicitHeight)
+          + Style.space(4)
+
+        // Declared first so the two buttons stack above it: a press on the
+        // right edge lands on × or ⋯, anywhere else on the header it toggles
+        // the folder's repository list.
+        MouseArea {
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.toggleExpand(folderRow.absPath)
+        }
+
+        Text {
+          id: folderChevron
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(4)
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: folderRow.expanded ? "\uf078" : "\uf054"
+          color: folderRow.folderState === "missing" ? root.urgent : root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        Column {
+          id: folderLabels
+          anchors.left: folderChevron.right
+          anchors.leftMargin: Style.space(8)
+          anchors.right: folderStopButton.left
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(1)
+
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            text: folderRow.folderPath
+            color: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            elide: Text.ElideRight
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            width: parent.width
+            text: folderRow.meta
+            color: folderRow.folderState === "missing" ? root.urgent : root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
+        }
+
+        // The destructive stop sits on the row itself -- it belonged to the
+        // old × the folders carried before any menu existed, and one click
+        // is all it should ever have taken. The menu is for the openers.
+        PanelActionButton {
+          id: folderStopButton
+          anchors.right: folderMenuButton.left
+          anchors.rightMargin: Style.space(2)
+          anchors.verticalCenter: parent.verticalCenter
+          iconText: "\uf00d"
+          tooltipText: "Stop watching"
+          foreground: root.dim
+          hoverColor: root.urgent
+          fontFamily: root.fontFamily
+          onClicked: root.removeDir(folderPath)
+        }
+
+        PanelActionButton {
+          id: folderMenuButton
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          iconText: "\uf141"
+          tooltipText: "Folder actions"
+          foreground: root.foreground
+          hoverColor: root.urgent
+          fontFamily: root.fontFamily
+          onClicked: folderMenu.open()
+        }
       }
 
-      Text {
-        textFormat: Text.PlainText
-        width: parent.width
-        text: folderRow.meta
-        color: folderRow.folderState === "missing" ? root.urgent : root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        elide: Text.ElideRight
-      }
-    }
+      // Every repository below the folder, pending or not, in the order the
+      // scanner walked them. The zero-height-when-hidden binding keeps the
+      // collapsed state out of the layout instead of leaving the Column's
+      // own implicit height to argue about.
+      Column {
+        id: folderRepos
+        width: folderColumn.width
+        spacing: Style.space(2)
+        visible: folderRow.expanded
+        height: visible ? implicitHeight : 0
 
-    PanelActionButton {
-      id: folderMenuButton
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      iconText: "\uf141"
-      tooltipText: "Folder actions"
-      foreground: root.foreground
-      hoverColor: root.urgent
-      fontFamily: root.fontFamily
-      onClicked: folderMenu.open()
+        Repeater {
+          model: folderRow.repoList
+          FolderRepoRow {
+            required property var modelData
+            width: folderRepos.width
+            repoItem: modelData
+          }
+        }
+      }
     }
 
     // What each menu index launches. The menu itself only counts rows; this is
@@ -667,9 +756,6 @@ Panel {
         if (absPath === "") return
         Util.execArgv(["wl-copy", absPath])
         folderMenu.close()
-      } else if (i === 5) {
-        root.removeDir(folderPath)
-        folderMenu.close()
       }
     }
 
@@ -685,7 +771,6 @@ Panel {
         { label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent, glyph: "\uf5fd" },
         { label: "Open in file explorer", glyph: "\uf07b" },
         { label: "Copy path", glyph: "\uf0c5" },
-        { label: "Stop watching", glyph: "\uf00d", urgent: true, sep: true },
       ]
       onChosen: function(i) { folderRow.pickMenu(i) }
 
@@ -696,6 +781,120 @@ Panel {
         root.folderMenuOpen = opened
         if (!opened && root.opened)
           Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
+    }
+  }
+
+  // One repository of an expanded folder. Clicking the row opens lazygit
+  // there -- the same contract as the pending rows -- and the ⋯ carries the
+  // repo's menu. Watching is not this row's business: stopping a folder is
+  // the folder's own ×.
+  component FolderRepoRow: Item {
+    id: folderRepoRow
+    property var repoItem: null
+    readonly property string repoName: repoItem ? String(repoItem.name) : ""
+    readonly property string absPath: repoItem ? root.canonDir(String(repoItem.path)) : ""
+    readonly property bool repoPending: repoItem ? repoItem.pending === true : false
+
+    implicitHeight: Math.max(repoRowName.implicitHeight, repoRowMenuButton.implicitHeight)
+      + Style.space(2)
+
+    MouseArea {
+      // Declared first so the button stacks above it: a press on the three
+      // dots opens the menu, anywhere else on the row it is lazygit.
+      anchors.fill: parent
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.openRepo(repoItem)
+    }
+
+    Text {
+      id: repoRowName
+      anchors.left: parent.left
+      anchors.leftMargin: Style.space(24)
+      anchors.right: repoRowStatus.left
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      text: folderRepoRow.repoName
+      color: root.foreground
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    Text {
+      id: repoRowStatus
+      anchors.right: repoRowMenuButton.left
+      anchors.rightMargin: Style.space(8)
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      text: folderRepoRow.repoPending ? "pending" : "synced"
+      color: folderRepoRow.repoPending ? root.urgent : root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    PanelActionButton {
+      id: repoRowMenuButton
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      iconText: "\uf141"
+      tooltipText: "Repo actions"
+      foreground: root.foreground
+      hoverColor: root.urgent
+      fontFamily: root.fontFamily
+      onClicked: repoRowMenu.open()
+    }
+
+    // Same menu the pending rows were given last round, now where it was
+    // always meant to live: lazygit at the head, digit 1 doing exactly what
+    // the row click does.
+    RowMenu {
+      id: repoRowMenu
+      x: repoRowMenuButton.x + repoRowMenuButton.width - width
+      y: repoRowMenuButton.y + repoRowMenuButton.height + Style.space(4)
+      title: root.displayDir(folderRepoRow.absPath)
+      items: [
+        { label: "Open lazygit", glyph: "\ue65d" },
+        { label: "Open in terminal", glyph: "\uf120" },
+        { label: "Open in code", glyph: "\uf121" },
+        { label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent, glyph: "\uf5fd" },
+        { label: "Open in file explorer", glyph: "\uf07b" },
+        { label: "Copy path", glyph: "\uf0c5" },
+      ]
+      onChosen: function(i) { folderRepoRow.pickMenu(i) }
+
+      // The flag this menu raises and the hand-back of the keys to the panel's
+      // catcher once it closes while the panel is still up; the opened-focus
+      // is the menu's own business. Several expanded rows own one flag: only
+      // one of these menus can be open, since opening the second closes the
+      // first through CloseOnPressOutside before its own press is released.
+      onOpenedChanged: {
+        root.repoMenuOpen = opened
+        if (!opened && root.opened)
+          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
+    }
+
+    function pickMenu(i) {
+      if (i === 0)
+        root.openRepo(folderRepoRow.repoItem)
+      else if (i === 1)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--",
+                                  "xdg-terminal-exec", "--dir=" + absPath])
+      else if (i === 2)
+        root.openFolder(absPath, ["omarchy-launch-editor", absPath])
+      else if (i === 3)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-terminal-exec",
+                                  "--dir=" + absPath, "-e", "omarchy-agent", "--inline"])
+      else if (i === 4)
+        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-open", absPath])
+      else if (i === 5) {
+        // Copying is a grab, not a departure: the panel stays open on purpose.
+        if (absPath === "") return
+        Util.execArgv(["wl-copy", absPath])
+        repoRowMenu.close()
       }
     }
   }
@@ -890,13 +1089,9 @@ Panel {
     property var repo: null
     property int row: 0
 
-    readonly property string repoPath: repo ? String(repo.path) : ""
-    readonly property string absPath: root.canonDir(repoPath)
-
     hasCursor: root.cursorActive && root.rowIndex === row
     foreground: root.foreground
-    implicitHeight: Math.max(repoContent.implicitHeight, repoMenuButton.implicitHeight)
-      + Style.spacing.rowPaddingX
+    implicitHeight: repoContent.implicitHeight + Style.spacing.rowPaddingX
 
     MouseArea {
       anchors.fill: parent
@@ -911,10 +1106,10 @@ Panel {
 
     RowLayout {
       anchors.left: parent.left
-      anchors.right: repoMenuButton.left
-      anchors.rightMargin: Style.space(8)
+      anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
       anchors.leftMargin: Style.space(10)
+      anchors.rightMargin: Style.space(10)
       spacing: Style.space(8)
 
       Text {
@@ -950,71 +1145,6 @@ Panel {
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
         }
-      }
-    }
-
-    // Declared after the row's MouseArea so it stacks above it: a press on the
-    // three dots lands on the button, not on the lazygit launch.
-    PanelActionButton {
-      id: repoMenuButton
-      anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
-      iconText: "\uf141"
-      tooltipText: "Repo actions"
-      foreground: root.foreground
-      hoverColor: root.urgent
-      fontFamily: root.fontFamily
-      onClicked: repoMenu.open()
-    }
-
-    // The row menu, same shape as the folder's, with lazygit at the head: the
-    // row click is the repo's default action and digit 1 should do exactly
-    // what it does.
-    RowMenu {
-      id: repoMenu
-      x: repoMenuButton.x + repoMenuButton.width - width
-      y: repoMenuButton.y + repoMenuButton.height + Style.space(4)
-      title: root.displayDir(repoRow.repoPath)
-      items: [
-        { label: "Open lazygit", glyph: "\ue65d" },
-        { label: "Open in terminal", glyph: "\uf120" },
-        { label: "Open in code", glyph: "\uf121" },
-        { label: root.defaultAgent === "" ? "Open in agent" : "Open in " + root.defaultAgent, glyph: "\uf5fd" },
-        { label: "Open in file explorer", glyph: "\uf07b" },
-        { label: "Copy path", glyph: "\uf0c5" },
-      ]
-      onChosen: function(i) { repoRow.pickMenu(i) }
-
-      // The flag this menu raises and the hand-back of the keys to the panel's
-      // catcher once it closes while the panel is still up; the opened-focus is
-      // the menu's own business.
-      onOpenedChanged: {
-        root.repoMenuOpen = opened
-        if (!opened && root.opened)
-          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-      }
-    }
-
-    function pickMenu(i) {
-      if (i === 0)
-        root.openRepo(repoRow.repo)
-      else if (i === 1)
-        root.openFolder(absPath, ["setsid", "uwsm-app", "--",
-                                  "xdg-terminal-exec", "--dir=" + absPath])
-      else if (i === 2)
-        root.openFolder(absPath, ["omarchy-launch-editor", absPath])
-      else if (i === 3)
-        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-terminal-exec",
-                                  "--dir=" + absPath, "-e", "omarchy-agent", "--inline"])
-      else if (i === 4)
-        root.openFolder(absPath, ["setsid", "uwsm-app", "--", "xdg-open", absPath])
-      else if (i === 5) {
-        // Copying is a grab, not a departure: the panel stays open on purpose,
-        // and wl-copy takes the path as its own argv entry, same as everywhere
-        // else here, so a folder named with a space stays a literal path.
-        if (absPath === "") return
-        Util.execArgv(["wl-copy", absPath])
-        repoMenu.close()
       }
     }
   }
