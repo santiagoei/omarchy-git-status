@@ -51,10 +51,11 @@ path, so nothing earlier in your own `PATH` gets to stand in for them.
 Watched folders are managed from the panel itself: type a path into the
 field at the bottom to add one, click the `⋯` on a folder for its menu:
 open it in a terminal, your default editor, your default coding agent or
-your file explorer, or copy its path; the `×` stops watching it. Clicking
+your file explorer, copy its path, or stop watching it. Clicking
 the folder row itself expands it into every repository it holds — each
 repo opens lazygit on a click and carries its own `⋯` with those same
-openers plus lazygit at the head. An expanded folder stays open across
+openers plus lazygit at the head. An open folder writes its path in
+bold, keeps its repositories indented under it, and stays open across
 refreshes until you click it shut. Each folder shows how many
 repositories it holds and how many of them are pending, so a typo shows
 up as "does not exist" on its own row.
@@ -87,9 +88,8 @@ and is also editable from the bar's widget settings UI:
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| Click a folder | Expand / collapse its repositories |
-| `×` on a folder | Stop watching it                 |
-| `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path (`1`–`5` or `↑`/`↓`) |
+| Click a folder | Expand / collapse its repositories (bold while open) |
+| `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
 | `⋯` on an expanded repo | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
 
 IPC, for scripts and keybinds:
