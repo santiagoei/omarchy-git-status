@@ -50,9 +50,10 @@ path, so nothing earlier in your own `PATH` gets to stand in for them.
 Watched folders are managed from the panel itself: type a path into the
 field at the bottom to add one, click the `⋯` on a folder for its menu:
 open it in a terminal, your default editor, your default coding agent or
-your file explorer, or stop watching it. Each folder shows how many
-repositories it holds and how many of them are pending, so a typo shows
-up as "does not exist" on its own row.
+your file explorer, or stop watching it. Every pending repository row has
+its own `⋯` too, with the same openers plus lazygit at the head. Each
+folder shows how many repositories it holds and how many of them are
+pending, so a typo shows up as "does not exist" on its own row.
 A pattern with `*` or `?` — `~/Projects/*`, say — is a bulk add: every
 folder it matches is stored exactly as if you had typed it itself, each
 with its own row and its own `⋯`. Patterns expand once, at add time; a
@@ -82,7 +83,8 @@ and is also editable from the bar's widget settings UI:
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| `⋯`          | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
+| `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
+| `⋯` on a repo   | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
 
 IPC, for scripts and keybinds:
 
