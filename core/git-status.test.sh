@@ -90,6 +90,21 @@ git -C "$clean" push -q origin main
 check "folder repo count" 2 "$("$SCRIPT" 3 "$WORK/repos" | jq -r '.watched[0].repos')"
 check "folder pending count" 1 "$("$SCRIPT" 3 "$WORK/repos" | jq -r '.watched[0].pending')"
 
+# The panel expands a folder with every repository below it, pending or not,
+# each with an absolute path so its menu can act on it without re-resolving.
+check "repoList holds every repo of the folder" 2 \
+  "$("$SCRIPT" 3 "$WORK/repos" | jq -r '.watched[0].repoList | length')"
+check "repoList marks the dirty repo pending" true \
+  "$("$SCRIPT" 3 "$WORK/repos" | jq -r '.watched[0].repoList[] | select(.name == "counted") | .pending')"
+check "repoList marks the clean repo synced" false \
+  "$("$SCRIPT" 3 "$WORK/repos" | jq -r '.watched[0].repoList[] | select(.name == "clean-one") | .pending')"
+check "repoList paths are absolute" true \
+  "$("$SCRIPT" 3 "$WORK/repos" | jq -r --arg w "$WORK" '.watched[0].repoList[0].path | startswith($w)')"
+check "empty folder gets an empty repoList" 0 \
+  "$("$SCRIPT" 3 "$WORK/plain" | jq -r '.watched[0].repoList | length')"
+check "missing folder gets an empty repoList" 0 \
+  "$("$SCRIPT" 3 "$WORK/gone" | jq -r '.watched[0].repoList | length')"
+
 # --- trusted environment -----------------------------------------------------
 # A writable directory ahead of the real one in PATH must not get to supply the
 # helpers: the script pins its own PATH and calls them by absolute path. This is

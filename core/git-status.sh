@@ -18,11 +18,15 @@
 #     "scanned": 12,
 #     "pending": [{"name": "foo", "path": "/home/me/code/foo",
 #                  "dir": "~/code", "issues": "uncommitted changes"}],
-#     "watched": [{"path": "~/code", "state": "ok", "repos": 12, "pending": 1}]
+#     "watched": [{"path": "~/code", "state": "ok", "repos": 12, "pending": 1,
+#                  "repoList": [{"name": "foo", "path": "/home/me/code/foo",
+#                                "pending": false}]}]
 #   }
 #
 # A watched folder's state is "ok", "missing" (not a directory) or "empty" (no
-# repositories below it).
+# repositories below it). repoList carries every repository found below the
+# folder -- pending or not -- so a panel can expand the folder and offer the
+# whole list, not just the offenders.
 #
 # The watch roots come from user settings, so any of them may be enormous. Every
 # limit below is a hard ceiling: crossing one aborts the whole scan with
@@ -104,9 +108,19 @@ add_pending() {
 add_watched() {
   watched_json=$("$JQ" -c \
     --arg path "${1:0:MAX_STRING}" --arg state "$2" \
-    --argjson repos "$3" --argjson pending "$4" \
-    '. + [{path: $path, state: $state, repos: $repos, pending: $pending}]' \
+    --argjson repos "$3" --argjson pending "$4" --argjson list "${5:-[]}" \
+    '. + [{path: $path, state: $state, repos: $repos, pending: $pending, repoList: $list}]' \
     <<<"$watched_json")
+}
+
+# ponytail: same O(n^2) shape as add_pending, same hard ceiling behind it. The
+# whole list, not just the offenders, is what lets the panel expand a folder.
+add_repo() {
+  dir_list=$("$JQ" -c \
+    --arg name "${1:0:MAX_STRING}" --arg path "${2:0:MAX_STRING}" \
+    --argjson pending "$3" \
+    '. + [{name: $name, path: $path, pending: $pending}]' \
+    <<<"$dir_list")
 }
 
 # Bounded read. A repository with a million dirty files would otherwise land in
@@ -153,6 +167,7 @@ for watch_dir in "$@"; do
   fi
 
   dir_pending=0
+  dir_list="[]"
 
   for git_dir in "${git_dirs[@]}"; do
     [ "$SECONDS" -lt "$DEADLINE_SEC" ] || die "scan deadline reached (${DEADLINE_SEC}s)"
@@ -182,16 +197,19 @@ for watch_dir in "$@"; do
       fi
     fi
 
+    repo_pending=false
     if [ ${#issues[@]} -gt 0 ]; then
       # ${issues[*]} with IFS=', ' joins on the comma alone -- bash only uses
       # the first character of IFS -- so build the list explicitly.
       joined=$(printf '%s, ' "${issues[@]}")
       add_pending "${repo#$watch_dir/}" "$repo" "$display_dir" "${joined%, }"
       dir_pending=$((dir_pending + 1))
+      repo_pending=true
     fi
+    add_repo "${repo#$watch_dir/}" "$repo" "$repo_pending"
   done
 
-  add_watched "$display_dir" ok "${#git_dirs[@]}" "$dir_pending"
+  add_watched "$display_dir" ok "${#git_dirs[@]}" "$dir_pending" "$dir_list"
 done
 
 out=$("$JQ" -cn \
