@@ -775,16 +775,8 @@ Panel {
         { label: "Copy path", glyph: "\uf0c5" },
         { label: "Stop watching", glyph: "\uf00d", urgent: true, sep: true },
       ]
+      menuKind: "folder"
       onChosen: function(i) { folderRow.pickMenu(i) }
-
-      // Opened-focus is the menu's own business; here only the shared flag and
-      // handing the keys back to the panel's catcher once the menu closes while
-      // the panel is still up.
-      onOpenedChanged: {
-        root.folderMenuOpen = opened
-        if (!opened && root.opened)
-          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-      }
     }
   }
 
@@ -876,18 +868,8 @@ Panel {
         { label: "Open in file explorer", glyph: "\uf07b" },
         { label: "Copy path", glyph: "\uf0c5" },
       ]
+      menuKind: "repo"
       onChosen: function(i) { folderRepoRow.pickMenu(i) }
-
-      // The flag this menu raises and the hand-back of the keys to the panel's
-      // catcher once it closes while the panel is still up; the opened-focus
-      // is the menu's own business. Several expanded rows own one flag: only
-      // one of these menus can be open, since opening the second closes the
-      // first through CloseOnPressOutside before its own press is released.
-      onOpenedChanged: {
-        root.repoMenuOpen = opened
-        if (!opened && root.opened)
-          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-      }
     }
 
     function pickMenu(i) {
@@ -999,6 +981,12 @@ Panel {
     property bool urgentTitle: false
     property var items: []
     property int menuIndex: 0
+    // Which panel-wide menu-open flag this popup owns. Everything the open
+    // and close of ANY menu does lives in the component's own handler:
+    // a per-instance onOpenedChanged REPLACES the base-type handler on the
+    // same object -- verified minimal repro -- and splitting the work across
+    // both silently dropped half of it each time.
+    property string menuKind: "folder"
 
     signal chosen(index: int)
 
@@ -1009,15 +997,25 @@ Panel {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
-    // Every open starts the cursor on the first row: the menu may have been
-    // closed over a different entry, or by Escape on the last one. Closing
-    // stamps the root so the press that dismissed it is recognised by the
-    // row underneath -- see root.pressDismissedMenu.
-    onOpenedChanged: if (opened) {
-      menuIndex = 0
-      Qt.callLater(function() { rowMenuContent.forceActiveFocus() })
-    } else {
-      root.menuCloseStamp = Date.now()
+    // Every open starts the cursor on the first row and takes the keys for
+    // the menu's own bindings: the previous open may have been closed over a
+    // different entry, or by Escape on the last one. A close stamps the root
+    // (pressDismissedMenu), frees the flag, and hands the keys back to the
+    // panel's catcher while the panel is still up -- dismissing a menu must
+    // not also fold the folder or launch lazygit underneath it.
+    onOpenedChanged: {
+      if (menuKind === "folder")
+        root.folderMenuOpen = opened
+      else
+        root.repoMenuOpen = opened
+      if (opened) {
+        menuIndex = 0
+        Qt.callLater(function() { rowMenuContent.forceActiveFocus() })
+      } else {
+        root.menuCloseStamp = Date.now()
+        if (root.opened)
+          Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
     }
 
     background: BorderSurface {
