@@ -71,6 +71,17 @@ Panel {
   property bool folderMenuOpen: false
   property bool repoMenuOpen: false
 
+  // A Popup with CloseOnPressOutside dismisses on the press itself, through a
+  // window-level filter that runs before the event reaches the item under the
+  // cursor: the same click that shoos the menu away also lands on the row
+  // beneath it. Rows latch this stamp on their press and swallow the matching
+  // click -- dismissing a menu must not also collapse the folder or launch
+  // lazygit.
+  property real menuCloseStamp: 0
+  function pressDismissedMenu() {
+    return Date.now() - menuCloseStamp < 350
+  }
+
   // Which watched folders are expanded into their repository lists, keyed by
   // canonical path. The state lives on the panel, not on the rows: the scan
   // replaces its model every tick and the delegates rebuild, and an opened
@@ -637,10 +648,23 @@ Panel {
         // right edge lands on the menu, anywhere else on the header it
         // toggles the folder's repository list.
         MouseArea {
+          id: folderHeaderMouse
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
-          onClicked: root.toggleExpand(folderRow.absPath)
+          // A press that arrived only to dismiss the folder menu must not
+          // also fold the folder: latch it here, on press, and let the
+          // release pass without acting. Which of the two signals fires
+          // depends on whether the popup's window filter or this area sees
+          // the event first -- either way the latch catches the press.
+          property bool dismissing: false
+          onPressed: dismissing = root.pressDismissedMenu()
+                            || root.folderMenuOpen || root.repoMenuOpen
+          onClicked: {
+            if (folderHeaderMouse.dismissing)
+              return
+            root.toggleExpand(folderRow.absPath)
+          }
         }
 
         Column {
@@ -781,10 +805,20 @@ Panel {
     MouseArea {
       // Declared first so the button stacks above it: a press on the three
       // dots opens the menu, anywhere else on the row it is lazygit.
+      id: folderRepoRowMouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
-      onClicked: root.openRepo(repoItem)
+      // Same dismissal latch as the folder header: a press that only closed
+      // some open menu must not also launch lazygit on this row.
+      property bool dismissing: false
+      onPressed: dismissing = root.pressDismissedMenu()
+                        || root.folderMenuOpen || root.repoMenuOpen
+      onClicked: {
+        if (folderRepoRowMouse.dismissing)
+          return
+        root.openRepo(repoItem)
+      }
     }
 
     Text {
@@ -976,10 +1010,14 @@ Panel {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
     // Every open starts the cursor on the first row: the menu may have been
-    // closed over a different entry, or by Escape on the last one.
+    // closed over a different entry, or by Escape on the last one. Closing
+    // stamps the root so the press that dismissed it is recognised by the
+    // row underneath -- see root.pressDismissedMenu.
     onOpenedChanged: if (opened) {
       menuIndex = 0
       Qt.callLater(function() { rowMenuContent.forceActiveFocus() })
+    } else {
+      root.menuCloseStamp = Date.now()
     }
 
     background: BorderSurface {
@@ -1073,6 +1111,7 @@ Panel {
     implicitHeight: repoContent.implicitHeight + Style.spacing.rowPaddingX
 
     MouseArea {
+      id: repoRowMouse
       anchors.fill: parent
       hoverEnabled: true
       cursorShape: Qt.PointingHandCursor
@@ -1080,7 +1119,16 @@ Panel {
         root.cursorActive = true
         root.rowIndex = repoRow.row
       }
-      onClicked: root.openRepo(repoRow.repo)
+      // Same dismissal latch: a press whose only purpose was closing an open
+      // menu must not launch lazygit for this repo as a side effect.
+      onPressed: repoRowMouse.dismissing = root.pressDismissedMenu()
+                        || root.folderMenuOpen || root.repoMenuOpen
+      property bool dismissing: false
+      onClicked: {
+        if (repoRowMouse.dismissing)
+          return
+        root.openRepo(repoRow.repo)
+      }
     }
 
     RowLayout {
