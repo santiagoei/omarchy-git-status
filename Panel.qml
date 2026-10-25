@@ -59,19 +59,22 @@ Panel {
 
   // Cursor state. Mouse hover and keyboard navigation drive the same index so
   // only one row is ever highlighted (the CursorSurface contract). The walk
-  // order mirrors the visual one: watched folders first (0..watched-1), then
-  // pending repositories (watched..navCount-1) -- the folders are the primary
-  // keyboard surface.
+  // order mirrors the visual one: pending repositories first, then the
+  // watched folders with the repositories of every expanded folder inside
+  // them -- pending is the reason the widget exists and must never sit below
+  // the fold of the always-expanded folders.
   property bool cursorActive: false
   property int rowIndex: 0
-  // Flat model of what the keyboard walks, mirroring the visual order: each
-  // watched folder header, then the repositories of every expanded folder,
-  // then the pending list. Arrows, Enter and the highlight address rows
-  // through it; the digit shortcuts (1..9) still jump to folders by position.
-  // Collapsed folders contribute only their header, so the cursor never
-  // rests on a hidden row.
+  // Flat model of what the keyboard walks, mirroring the visual order: the
+  // pending list first, then each watched folder header and the repositories
+  // of that folder when it is open. Arrows, Enter and the highlight address
+  // rows through it; the digit shortcuts (1..9) still jump to folders by
+  // position. Collapsed folders contribute only their header, so the cursor
+  // never rests on a hidden row.
   readonly property var navRows: {
     var out = []
+    for (var p = 0; p < pending.length; p++)
+      out.push({ type: "pending", folder: -1, repo: p })
     for (var f = 0; f < watched.length; f++) {
       out.push({ type: "folder", folder: f, repo: -1 })
       var folder = watched[f]
@@ -81,8 +84,6 @@ Panel {
           out.push({ type: "repo", folder: f, repo: r })
       }
     }
-    for (var p = 0; p < pending.length; p++)
-      out.push({ type: "pending", folder: -1, repo: p })
     return out
   }
   readonly property int navCount: navRows.length
@@ -609,6 +610,49 @@ Panel {
           PanelSeparator { foreground: root.foreground }
 
           Column {
+            width: parent.width
+            spacing: Style.space(10)
+
+            PanelSectionHeader {
+              text: "PENDING TO SYNC"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: !root.unsynced && root.lastError === ""
+              width: parent.width
+              text: root.watched.length === 0
+                ? "No folders watched yet. Add one below."
+                : "Everything is committed and pushed."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Column {
+              id: repoColumn
+              visible: root.unsynced
+              width: parent.width
+              spacing: Style.space(6)
+
+              Repeater {
+                model: root.pending
+                RepoRow {
+                  required property var modelData
+                  required property int index
+                  width: repoColumn.width
+                  repo: modelData
+                  row: root.navIndexOf("pending", -1, index)
+                }
+              }
+            }
+          }
+
+          PanelSeparator { foreground: root.foreground }
+          Column {
             id: folderSection
             width: parent.width
             spacing: Style.space(8)
@@ -668,51 +712,6 @@ Panel {
               }
             }
           }
-
-
-          PanelSeparator { foreground: root.foreground }
-
-          Column {
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "PENDING TO SYNC"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              visible: !root.unsynced && root.lastError === ""
-              width: parent.width
-              text: root.watched.length === 0
-                ? "No folders watched yet. Add one below."
-                : "Everything is committed and pushed."
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              horizontalAlignment: Text.AlignHCenter
-            }
-
-            Column {
-              id: repoColumn
-              visible: root.unsynced
-              width: parent.width
-              spacing: Style.space(6)
-
-              Repeater {
-                model: root.pending
-                RepoRow {
-                  required property var modelData
-                  required property int index
-                  width: repoColumn.width
-                  repo: modelData
-                  row: root.navIndexOf("pending", -1, index)
-                }
-              }
-            }
-          }
         }
       }
     }
@@ -722,7 +721,7 @@ Panel {
     id: folderRow
     property var folder: null
     // Position in the watched list: the digit shortcuts and the arrow cursor
-    // address folders through it (folder rows lead the keyboard walk).
+    // address folders through it (folders are walked after the pending rows).
     property int folderIndex: 0
     readonly property bool navSelected: root.cursorActive
       && root.rowIndex === root.navIndexOf("folder", folderIndex, -1)

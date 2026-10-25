@@ -83,7 +83,7 @@ and is also editable from the bar's widget settings UI:
 | ------------ | ---------------------------------- |
 | Left click   | Open the popup                     |
 | Right click  | Rescan now                         |
-| `↑` / `↓`    | Walk the whole list: folder headers, the repositories inside each expanded folder, then the pending list |
+| `↑` / `↓`    | Walk the whole list: the pending repositories, then the folder headers and the repositories inside each expanded folder |
 | `Enter`      | On a folder or a nested repository: open its ⋯ menu (where `1`–`6` choose the action). On a pending row: open lazygit |
 | `1`–`9`      | Open the ⋯ menu of the Nth watched folder |
 | `r`          | Rescan                             |
@@ -93,13 +93,14 @@ and is also editable from the bar's widget settings UI:
 | `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
 | `⋯` on an expanded repo | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
 
-Watched folders lead the panel and the keyboard: they are always expanded
-(click to shut one; an open one writes its path in bold so the indented
-repo rows read as its children), the digit shortcuts jump
+Pending leads the panel and the keyboard: the list opens with the
+repositories still to sync (the widget's reason to be), watched folders
+follow, always expanded (click to shut one; an open one writes its path in
+bold so the indented repo rows read as its children), the digit shortcuts jump
 straight into a folder's menu, and once a menu is open its actions answer
 to digits too -- `SUPER + N` to open the panel, `2` on the folder, `1`
 for "Open in terminal" is a whole project launch without touching the
-mouse. Pending repositories follow the folders in the arrow-key order and
+mouse. Pending repositories lead the arrow-key order and
 keep `Enter` as the lazygit shortcut.
 
 IPC, for scripts and keybinds:
