@@ -83,14 +83,23 @@ and is also editable from the bar's widget settings UI:
 | ------------ | ---------------------------------- |
 | Left click   | Open the popup                     |
 | Right click  | Rescan now                         |
-| `↑` / `↓`    | Move between pending repositories  |
-| `Enter`      | Open lazygit for that repository   |
+| `↑` / `↓`    | Walk the whole list: folder headers, the repositories inside each expanded folder, then the pending list |
+| `Enter`      | On a folder or a nested repository: open its ⋯ menu (where `1`–`6` choose the action). On a pending row: open lazygit |
+| `1`–`9`      | Open the ⋯ menu of the Nth watched folder |
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| Click a folder | Expand / collapse its repositories (bold while open) |
+| Click a folder | Collapse / re-expand its repositories (bold while shut) |
 | `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
 | `⋯` on an expanded repo | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
+
+Watched folders lead the panel and the keyboard: they are always expanded
+(click to shut one, bold marks the exception), the digit shortcuts jump
+straight into a folder's menu, and once a menu is open its actions answer
+to digits too -- `SUPER + N` to open the panel, `2` on the folder, `1`
+for "Open in terminal" is a whole project launch without touching the
+mouse. Pending repositories follow the folders in the arrow-key order and
+keep `Enter` as the lazygit shortcut.
 
 IPC, for scripts and keybinds:
 

@@ -58,9 +58,43 @@ Panel {
   }
 
   // Cursor state. Mouse hover and keyboard navigation drive the same index so
-  // only one row is ever highlighted (the CursorSurface contract).
+  // only one row is ever highlighted (the CursorSurface contract). The walk
+  // order mirrors the visual one: watched folders first (0..watched-1), then
+  // pending repositories (watched..navCount-1) -- the folders are the primary
+  // keyboard surface.
   property bool cursorActive: false
   property int rowIndex: 0
+  // Flat model of what the keyboard walks, mirroring the visual order: each
+  // watched folder header, then the repositories of every expanded folder,
+  // then the pending list. Arrows, Enter and the highlight address rows
+  // through it; the digit shortcuts (1..9) still jump to folders by position.
+  // Collapsed folders contribute only their header, so the cursor never
+  // rests on a hidden row.
+  readonly property var navRows: {
+    var out = []
+    for (var f = 0; f < watched.length; f++) {
+      out.push({ type: "folder", folder: f, repo: -1 })
+      var folder = watched[f]
+      var repos = folder && folder.repoList ? folder.repoList : []
+      if (collapsedDirs[canonDir(folder ? String(folder.path) : "")] !== true) {
+        for (var r = 0; r < repos.length; r++)
+          out.push({ type: "repo", folder: f, repo: r })
+      }
+    }
+    for (var p = 0; p < pending.length; p++)
+      out.push({ type: "pending", folder: -1, repo: p })
+    return out
+  }
+  readonly property int navCount: navRows.length
+
+  function navIndexOf(type, folder, repo) {
+    for (var i = 0; i < navRows.length; i++) {
+      var row = navRows[i]
+      if (row.type === type && row.folder === folder && row.repo === repo)
+        return i
+    }
+    return -1
+  }
 
   // True while one of the row ⋯ popups is open: the key catcher stands down so its
   // arrows and Escape reach the menu instead of the repo list, exactly the way
@@ -82,19 +116,40 @@ Panel {
     return Date.now() - menuCloseStamp < 350
   }
 
-  // Which watched folders are expanded into their repository lists, keyed by
-  // canonical path. The state lives on the panel, not on the rows: the scan
-  // replaces its model every tick and the delegates rebuild, and an opened
-  // folder should stay open until it is clicked shut again.
-  property var expandedDirs: ({})
+  // Which watched folders are CLICKED SHUT, keyed by canonical path. The
+  // default is expanded: every folder shows its repos, so the digit shortcuts
+  // (1..9) always map to a visible row and the arrow keys can walk the list
+  // without folders hiding their repositories. The state lives on the panel,
+  // not on the rows: the scan replaces its model every tick and the delegates
+  // rebuild, and a folder clicked shut should stay shut until it is clicked
+  // open again.
+  property var collapsedDirs: ({})
 
   function toggleExpand(key) {
     if (key === "") return
     var next = ({})
-    for (var k in expandedDirs)
-      if (expandedDirs[k] === true && k !== key) next[k] = true
-    if (expandedDirs[key] !== true) next[key] = true
-    expandedDirs = next
+    for (var k in collapsedDirs)
+      if (collapsedDirs[k] === true && k !== key) next[k] = true
+    if (collapsedDirs[key] !== true) next[key] = true
+    collapsedDirs = next
+  }
+
+  // Digit shortcuts (1..9) and Enter-on-folder open the watched folder's ⋯
+  // menu by position: the folder list is the keyboard entry point for
+  // "open in terminal/code/agent" per project once the panel is focused.
+  function openFolderMenuAt(index) {
+    if (index < 0 || index >= watched.length) return
+    var item = folderRepeater.itemAt(index)
+    if (item)
+      item.openMenu()
+  }
+
+  // Keyboard path to the ⋯ menu of a repository inside an expanded folder:
+  // find the folder's delegate, then the repository row's delegate inside it.
+  function openRepoMenuAt(folderIndex, repoIndex) {
+    var item = folderRepeater.itemAt(folderIndex)
+    if (item)
+      item.openRepoMenu(repoIndex)
   }
 
   function localPathFromUrl(url) {
@@ -282,8 +337,8 @@ Panel {
 
   function moveCursor(dx, dy) {
     cursorActive = true
-    if (dy === 0 || pending.length === 0) return
-    rowIndex = Math.max(0, Math.min(pending.length - 1, rowIndex + dy))
+    if (dy === 0 || navCount === 0) return
+    rowIndex = Math.max(0, Math.min(navCount - 1, rowIndex + dy))
   }
 
   implicitWidth: button.implicitWidth
@@ -360,7 +415,7 @@ Panel {
         } catch (error) {
           root.lastError = "could not read the scan output"
         }
-        if (root.rowIndex >= root.pending.length) root.rowIndex = Math.max(0, root.pending.length - 1)
+        if (root.rowIndex >= root.navCount) root.rowIndex = Math.max(0, root.navCount - 1)
       }
     }
     onExited: function(exitCode) {
@@ -475,10 +530,27 @@ Panel {
         if (!root.cursorActive) { root.cursorActive = true; return }
         root.moveCursor(dx, dy)
       }
-      onActivateRequested: if (root.cursorActive && root.pending.length > 0) root.openRepo(root.pending[root.rowIndex])
+      onActivateRequested: {
+        if (!root.cursorActive || root.navCount === 0)
+          return
+        var at = root.navRows[root.rowIndex]
+        if (!at)
+          return
+        if (at.type === "folder")
+          root.openFolderMenuAt(at.folder)
+        else if (at.type === "repo")
+          root.openRepoMenuAt(at.folder, at.repo)
+        else
+          root.openRepo(root.pending[at.repo])
+      }
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
-      onTextKey: function(t) { if (t === "r" || t === "R") root.refresh() }
+      onTextKey: function(t) {
+        if (t === "r" || t === "R")
+          root.refresh()
+        else if (t >= "1" && t <= "9")
+          root.openFolderMenuAt(Number(t) - 1)
+      }
 
       Flickable {
         id: panelFlick
@@ -537,50 +609,6 @@ Panel {
           PanelSeparator { foreground: root.foreground }
 
           Column {
-            width: parent.width
-            spacing: Style.space(10)
-
-            PanelSectionHeader {
-              text: "PENDING TO SYNC"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
-
-            Text {
-              textFormat: Text.PlainText
-              visible: !root.unsynced && root.lastError === ""
-              width: parent.width
-              text: root.watched.length === 0
-                ? "No folders watched yet. Add one below."
-                : "Everything is committed and pushed."
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              horizontalAlignment: Text.AlignHCenter
-            }
-
-            Column {
-              id: repoColumn
-              visible: root.unsynced
-              width: parent.width
-              spacing: Style.space(6)
-
-              Repeater {
-                model: root.pending
-                RepoRow {
-                  required property var modelData
-                  required property int index
-                  width: repoColumn.width
-                  repo: modelData
-                  row: index
-                }
-              }
-            }
-          }
-
-          PanelSeparator { foreground: root.foreground }
-
-          Column {
             id: folderSection
             width: parent.width
             spacing: Style.space(8)
@@ -596,11 +624,14 @@ Panel {
               spacing: Style.space(2)
 
               Repeater {
+                id: folderRepeater
                 model: root.watched
                 FolderRow {
                   required property var modelData
+                  required property int index
                   width: folderSection.width
                   folder: modelData
+                  folderIndex: index
                 }
               }
             }
@@ -637,6 +668,51 @@ Panel {
               }
             }
           }
+
+
+          PanelSeparator { foreground: root.foreground }
+
+          Column {
+            width: parent.width
+            spacing: Style.space(10)
+
+            PanelSectionHeader {
+              text: "PENDING TO SYNC"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Text {
+              textFormat: Text.PlainText
+              visible: !root.unsynced && root.lastError === ""
+              width: parent.width
+              text: root.watched.length === 0
+                ? "No folders watched yet. Add one below."
+                : "Everything is committed and pushed."
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Column {
+              id: repoColumn
+              visible: root.unsynced
+              width: parent.width
+              spacing: Style.space(6)
+
+              Repeater {
+                model: root.pending
+                RepoRow {
+                  required property var modelData
+                  required property int index
+                  width: repoColumn.width
+                  repo: modelData
+                  row: root.navIndexOf("pending", -1, index)
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -645,12 +721,23 @@ Panel {
   component FolderRow: Item {
     id: folderRow
     property var folder: null
+    // Position in the watched list: the digit shortcuts and the arrow cursor
+    // address folders through it (folder rows lead the keyboard walk).
+    property int folderIndex: 0
+    readonly property bool navSelected: root.cursorActive
+      && root.rowIndex === root.navIndexOf("folder", folderIndex, -1)
+    function openMenu() { folderMenu.open() }
+    function openRepoMenu(i) {
+      var item = folderRepoRepeater.itemAt(i)
+      if (item)
+        item.openMenu()
+    }
     readonly property string folderPath: folder ? String(folder.path) : ""
     readonly property string folderState: folder ? String(folder.state) : "ok"
     // The rows speak the displayed ~ form; launchers want the real path, so
     // every action -- and the expansion key -- runs against the canonicalised one.
     readonly property string absPath: root.canonDir(folderPath)
-    readonly property bool expanded: root.expandedDirs[absPath] === true
+    readonly property bool expanded: root.collapsedDirs[absPath] !== true
     readonly property var repoList: folder && folder.repoList ? folder.repoList : []
     readonly property string meta: {
       if (folderState === "missing") return "does not exist"
@@ -668,9 +755,11 @@ Panel {
       width: parent.width
       spacing: 0
 
-      Item {
+      CursorSurface {
         id: folderHeader
         width: folderColumn.width
+        hasCursor: folderRow.navSelected
+        foreground: root.foreground
         height: Math.max(folderLabels.implicitHeight, folderMenuButton.implicitHeight)
           + Style.space(4)
 
@@ -681,6 +770,10 @@ Panel {
           id: folderHeaderMouse
           anchors.fill: parent
           hoverEnabled: true
+          onEntered: {
+            root.cursorActive = true
+            root.rowIndex = root.navIndexOf("folder", folderRow.folderIndex, -1)
+          }
           cursorShape: Qt.PointingHandCursor
           // A press that arrived only to dismiss the folder menu must not
           // also fold the folder: latch it here, on press, and let the
@@ -705,9 +798,9 @@ Panel {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(1)
 
-          // An open folder writes its path in bold: with the repo list
-          // hanging under it and no arrow to say which is which, the weight
-          // is what marks the folder as the one currently expanded.
+          // Folders open by default, so the weight marks the exception: a
+          // CLICKED-SHUT folder writes its path in bold, the one row whose
+          // repository list is missing from the panel.
           Text {
             textFormat: Text.PlainText
             width: parent.width
@@ -715,7 +808,7 @@ Panel {
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
-            font.bold: folderRow.expanded
+            font.bold: !folderRow.expanded
             elide: Text.ElideRight
           }
 
@@ -755,11 +848,15 @@ Panel {
         height: visible ? implicitHeight : 0
 
         Repeater {
+          id: folderRepoRepeater
           model: folderRow.repoList
           FolderRepoRow {
             required property var modelData
+            required property int index
             width: folderRepos.width
             repoItem: modelData
+            folderIndex: folderRow.folderIndex
+            repoIndex: index
           }
         }
       }
@@ -814,9 +911,16 @@ Panel {
   // there -- the same contract as the pending rows -- and the ⋯ carries the
   // repo's menu. Watching is not this row's business: stopping a folder
   // belongs to the folder's own menu.
-  component FolderRepoRow: Item {
+  component FolderRepoRow: CursorSurface {
     id: folderRepoRow
     property var repoItem: null
+    property int folderIndex: 0
+    property int repoIndex: 0
+    readonly property int navIdx: root.navIndexOf("repo", folderIndex, repoIndex)
+    function openMenu() { repoRowMenu.open() }
+
+    hasCursor: root.cursorActive && root.rowIndex === navIdx && navIdx >= 0
+    foreground: root.foreground
     readonly property string repoName: repoItem ? String(repoItem.name) : ""
     readonly property string absPath: repoItem ? root.canonDir(String(repoItem.path)) : ""
     readonly property bool repoPending: repoItem ? repoItem.pending === true : false
@@ -830,6 +934,10 @@ Panel {
       id: folderRepoRowMouse
       anchors.fill: parent
       hoverEnabled: true
+      onEntered: {
+        root.cursorActive = true
+        root.rowIndex = folderRepoRow.navIdx
+      }
       cursorShape: Qt.PointingHandCursor
       // Same dismissal latch as the folder header: a press that only closed
       // some open menu must not also launch lazygit on this row.
