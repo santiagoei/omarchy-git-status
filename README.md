@@ -95,7 +95,8 @@ and is also editable from the bar's widget settings UI:
 IPC, for scripts and keybinds:
 
 ```bash
-omarchy-shell ei.git-status toggle
+omarchy-shell shell toggle ei.git-status    # open/close: the bar picks the focused monitor's copy
+omarchy-shell ei.git-status toggle          # same, routed through that picker from inside the widget
 omarchy-shell ei.git-status refresh
 omarchy-shell ei.git-status status         # -> "4 repos pending"
 omarchy-shell ei.git-status watch '~/work'

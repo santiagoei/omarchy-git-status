@@ -397,14 +397,44 @@ Panel {
     onTriggered: root.refresh()
   }
 
+  // The bar builds one copy of this widget per monitor, and a call to the
+  // ei.git-status IPC target reaches whichever copy claimed the name first:
+  // the primary screen's bar. The card anchors to its own bar button, so the
+  // copy that answers is the screen the panel appears on -- which is why a
+  // raw `ei.git-status toggle` always opened over the primary monitor. These
+  // three hand open/close/toggle to the bar's own picker instead (an already
+  // open copy wins, else the copy on Hyprland's focused monitor), the routing
+  // `omarchy-shell shell toggle <id>` uses for every first-party widget.
+  function summonViaBar() {
+    if (bar && typeof bar.summonBarWidget === "function" && bar.summonBarWidget(moduleName))
+      return true
+    open()
+    return false
+  }
+
+  function hideViaBar() {
+    if (bar && typeof bar.hideBarWidget === "function" && bar.hideBarWidget(moduleName))
+      return true
+    close()
+    return false
+  }
+
+  function toggleViaBar() {
+    if (bar && typeof bar.isBarWidgetOpen === "function" &&
+        typeof bar.summonBarWidget === "function" && typeof bar.hideBarWidget === "function")
+      return bar.isBarWidgetOpen(moduleName) ? hideViaBar() : summonViaBar()
+    toggle()
+    return false
+  }
+
   IpcHandler {
     // Guarded the way the Ui/Panel base guards its own: moduleName is injected
     // by the host, so an unguarded handler can register an empty target.
     enabled: root.ipcTarget !== ""
     target: root.ipcTarget
-    function open(): void { root.open() }
-    function close(): void { root.close() }
-    function toggle(): void { root.toggle() }
+    function open(): void { root.summonViaBar() }
+    function close(): void { root.hideViaBar() }
+    function toggle(): void { root.toggleViaBar() }
     function refresh(): string { root.refresh(); return "ok" }
     function status(): string { return root.summary }
     function watch(dir: string): string { root.addDir(dir); return root.watchDirs }
