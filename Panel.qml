@@ -798,9 +798,10 @@ Panel {
           anchors.verticalCenter: parent.verticalCenter
           spacing: Style.space(1)
 
-          // Folders open by default, so the weight marks the exception: a
-          // CLICKED-SHUT folder writes its path in bold, the one row whose
-          // repository list is missing from the panel.
+          // The weight marks the folders that are OPEN: their repository rows
+          // appear indented below, and a bold header keeps those rows' plain
+          // text from reading as a list of equal peers. A collapsed folder
+          // sits at normal weight, quiet among its neighbours.
           Text {
             textFormat: Text.PlainText
             width: parent.width
@@ -808,7 +809,7 @@ Panel {
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
-            font.bold: !folderRow.expanded
+            font.bold: folderRow.expanded
             elide: Text.ElideRight
           }
 

@@ -89,12 +89,13 @@ and is also editable from the bar's widget settings UI:
 | `r`          | Rescan                             |
 | `Esc`        | Close                              |
 | Type + `↵`   | Add a watched folder               |
-| Click a folder | Collapse / re-expand its repositories (bold while shut) |
+| Click a folder | Collapse / re-expand its repositories (bold while open) |
 | `⋯` on a folder | Folder menu: open in terminal, editor, agent or file explorer, copy path, stop watching (`1`–`6` or `↑`/`↓`) |
 | `⋯` on an expanded repo | Repo menu: lazygit, open in terminal, editor, agent or file explorer, copy path (`1`–`6` or `↑`/`↓`) |
 
 Watched folders lead the panel and the keyboard: they are always expanded
-(click to shut one, bold marks the exception), the digit shortcuts jump
+(click to shut one; an open one writes its path in bold so the indented
+repo rows read as its children), the digit shortcuts jump
 straight into a folder's menu, and once a menu is open its actions answer
 to digits too -- `SUPER + N` to open the panel, `2` on the folder, `1`
 for "Open in terminal" is a whole project launch without touching the
